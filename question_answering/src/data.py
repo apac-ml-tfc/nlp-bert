@@ -22,7 +22,7 @@ def load_dataloader(filename, max_seq_length=384, doc_stride=128, max_query_leng
     
     '''
     tokenizer = tokenizer.from_pretrained(pretrained_weights)
-    data_dir, filename = filename.split('/')[:-1], filename.split('/')[-1]
+    data_dir, filename = '/'.join(filename.split('/')[:-1]), filename.split('/')[-1] # split to get directory and filename separately
     examples = processor.get_train_examples(data_dir, filename)
     features, dataset = squad_convert_examples_to_features(
         examples=examples,
