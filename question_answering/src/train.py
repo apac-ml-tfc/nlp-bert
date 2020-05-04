@@ -18,7 +18,7 @@ import config
 import data
 
 
-logger = logging.getLogger("train")
+logger = logging.getLogger()
 
 
 def set_seed(args):
@@ -122,7 +122,7 @@ def train(args):
 
     for step, batch in enumerate(train_dataloader):
         model.train()
-        batch = tuple(t.to(args.device) for t in batch)
+        batch = tuple(t.to(device) for t in batch)
 
         inputs = {
             "input_ids": batch[0],
@@ -143,7 +143,7 @@ def train(args):
                 inputs.update({
                     "langs": (
                         torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id
-                    ).to(args.device),
+                    ).to(device),
                 })
 
         outputs = model(**inputs)
@@ -170,10 +170,10 @@ def train(args):
                 logstr = f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
 
                 # Only evaluate when single GPU otherwise metrics may not average well
-                if args.local_rank == -1 and args.evaluate_during_training:
-                    results = evaluate(args, model, tokenizer)
-                    for key, value in results.items():
-                        logstr += f" eval_{key}={value};"
+                logger.info(f"[global step {global_step}] Starting evaluation...")
+                results = evaluate(args, model, tokenizer, device)
+                for key, value in results.items():
+                    logstr += f" eval_{key}={value};"
 
                 logger.info(f"[global step {global_step}] metrics: {logstr}")
                 logging_loss = tr_loss
@@ -186,7 +186,7 @@ def train(args):
     save_progress(model, args)
     return
 
-def evaluate(args, model, tokenizer, prefix=""):
+def evaluate(args, model, tokenizer, device, prefix=""):
     examples, features, eval_dataloader = data.load_dataloader(
         args.validation,
         max_seq_length=args.max_seq_len,
@@ -206,7 +206,7 @@ def evaluate(args, model, tokenizer, prefix=""):
 
     for batch in eval_dataloader:
         model.eval()
-        batch = tuple(t.to(args.device) for t in batch)
+        batch = tuple(t.to(device) for t in batch)
 
         with torch.no_grad():
             inputs = {
@@ -226,7 +226,7 @@ def evaluate(args, model, tokenizer, prefix=""):
                 # for lang_id-sensitive xlm models
                 if hasattr(model, "config") and hasattr(model.config, "lang2id"):
                     inputs.update(
-                        {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(args.device)}
+                        {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(device)}
                     )
 
             outputs = model(**inputs)
