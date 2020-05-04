@@ -21,6 +21,10 @@ import data
 logger = logging.getLogger()
 
 
+def to_list(tensor):
+    return tensor.detach().cpu().tolist()
+
+
 def set_seed(args):
     if args.seed:
         random.seed(args.seed)
