@@ -2,12 +2,11 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import SquadV1Processor, squad_convert_examples_to_features, BertTokenizer
 
 
-def load_dataloader(data_dir, filename, max_seq_length=384, doc_stride=128, max_query_length=64, threads=1, batch_size=32, is_training=True, tokenizer=BertTokenizer, pretrained_weights='bert-base-uncased', processor=SquadV1Processor()):
+def load_dataloader(filename, max_seq_length=384, doc_stride=128, max_query_length=64, threads=1, batch_size=32, is_training=True, tokenizer=BertTokenizer, pretrained_weights='bert-base-uncased', processor=SquadV1Processor()):
     '''
     Load Dataset into DataLoader with predetermined parameters and return features and examples as well (needed for evaluation)
     
-    data_dir: location of json file to be loaded
-    filename: name of json file to be loaded
+    filename: full file path of json file to be loaded
     max_seq_length: max len of tokens in sentence
     doc_stride: stride length of document
     max_query_length: max len of query
@@ -23,6 +22,7 @@ def load_dataloader(data_dir, filename, max_seq_length=384, doc_stride=128, max_
     
     '''
     tokenizer = tokenizer.from_pretrained(pretrained_weights)
+    data_dir, filename = filename.split('/')[:-1], filename.split('/')[-1]
     examples = processor.get_train_examples(data_dir, filename)
     features, dataset = squad_convert_examples_to_features(
         examples=examples,
