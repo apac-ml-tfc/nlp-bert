@@ -10,6 +10,10 @@ import os
 import transformers as txf
 
 
+logging.basicConfig()
+logger = logging.getLogger("config")
+
+
 MODEL_CONFIG_CLASSES = list(txf.MODEL_FOR_QUESTION_ANSWERING_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in MODEL_CONFIG_CLASSES), (),)
@@ -53,6 +57,32 @@ def parse_args():
         "--model-type", type=str, default=hps.get("model-type", "bert"),
         help=f"Model type selected in the list: {', '.join(MODEL_TYPES)}"
     )
+    parser.add_argument("--uncased-model", type=boolean_hyperparam, default=hps.get("uncased-model"),
+        help="Set this flag if you are using an uncased model (Auto-set from config-name by default)."
+    )
+
+    ## Data processing parameters:
+    parser.add_argument("--doc-stride", type=int, default=hps.get("doc-stride", 128),
+        help="When splitting up a long document into chunks, how much stride to take between chunks."
+    )
+    parser.add_argument("--max-answer-len", type=int, default=hps.get("max-answer-len", 30),
+        help="The maximum length of an answer that can be generated. This is needed because the start "
+            "and end predictions are not conditioned on one another."
+    )
+    parser.add_argument("--max-query-len", type=int, default=hps.get("max-query-len", 64),
+        help="The maximum number of tokens for the question. Questions longer than this will be truncated "
+            "to this length.",
+    )
+    parser.add_argument("--max-seq-len", type=int, default=hps.get("max-seq-length", 384),
+        help="The maximum total input sequence length after WordPiece tokenization. Sequences "
+            "longer than this will be truncated, and sequences shorter than this will be padded."
+    )
+    parser.add_argument("--n-best-size", type=int, default=hps.get("n-best-size", 20),
+        help="The total number of n-best predictions to generate in the nbest_predictions.json output file."
+    )
+    parser.add_argument("--null-score-diff-thresh", type=float, default("null-score-diff-thresh", 0.0),
+        help="If null_score - best_non_null is greater than the threshold predict null."
+    )
 
     ## Training process parameters:
     parser.add_argument("--adam-epsilon", type=float, default=hps.get("adam-epsilon", 1e-8),
@@ -94,6 +124,10 @@ def parse_args():
     parser.add_argument("--num-gpus", type=int, default=os.environ.get("SM_NUM_GPUS", 0),
         help="Number of GPUs to use in training."
     )
+    parser.add_argument("--num-workers", "-j", type=int,
+        default=hps.get("num-workers", max(0, int(os.environ.get("SM_NUM_CPUS", 0)) - 2)),
+        help="Number of data workers: set higher to accelerate data loading, if CPU and GPUs are powerful"
+    )
 
     # I/O Settings:
     parser.add_argument("--checkpoint-dir", type=str,
@@ -103,17 +137,32 @@ def parse_args():
         default=hps.get("checkpoint-interval", 0),
         help="Steps between saving checkpoints (set 0 to disable)"
     )
+    parser.add_argument("--log-interval", type=int, default=hps.get("log-interval", 100),
+        help="Logging mini-batch interval. Default is 100."
+    )
     parser.add_argument("--log-level", default=hps.get("log-level", logging.INFO),
         help="Log level (per Python specs, string or int)."
     )
     parser.add_argument("--model-dir", type=str,
         default=os.environ.get("SM_MODEL_DIR", "/opt/ml/model")
     )
+    parser.add_argument("--output-data-dir", type=str,
+        default=os.environ.get("SM_OUTPUT_DATA_DIR", "/opt/ml/output/data")
+    )
     parser.add_argument("--train", type=str, default=os.environ.get("SM_CHANNEL_TRAIN"))
+    parser.add_argument("--validation", type=str, default=os.environ.get("SM_CHANNEL_VALIDATION"))
 
     args = parser.parse_args()
 
     ## Post-argparse validations & transformations:
-    # ...None yet
+    if args.uncased_model is None:
+        if "uncased" in args.config_name:
+            logger.info(f"Assuming uncased model from name '{args.config_name}'")
+        elif "cased" in args.config_name:
+            logger.info(f"Assuming cased model from name '{args.config_name}'")
+        else:
+            parser.error(
+                f"--uncased-model not specified and could not infer from --config-name '{args.config_name}'"
+            )
 
     return args

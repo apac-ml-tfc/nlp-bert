@@ -11,6 +11,7 @@ import timeit
 import torch
 import transformers as txf
 from transformers.data.metrics import squad_metrics
+from transformers.data.processors.squad import SquadResult
 
 # Local Dependencies:
 import config
@@ -61,11 +62,11 @@ def train(args):
     set_seed(args)
 
     config = txf.AutoConfig.from_pretrained(args.config_name)
-#     tokenizer = AutoTokenizer.from_pretrained(
-#         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
-#         do_lower_case=args.do_lower_case,
-#         cache_dir=args.cache_dir if args.cache_dir else None,
-#     )
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
+        do_lower_case=args.do_lower_case,
+        cache_dir=args.cache_dir if args.cache_dir else None,
+    )
     model = txf.AutoModelForQuestionAnswering.from_pretrained(
         args.config_name,
         from_tf=bool(".ckpt" in args.model_name_or_path),
@@ -94,6 +95,18 @@ def train(args):
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
     )
 
+    _, _, train_dataloader = data.load_dataloader(
+        args.train,
+        max_seq_length=args.max_seq_len,
+        doc_stride=args.doc_stride,
+        max_query_length=args.max_query_len,
+        threads=args.num_workers,
+        batch_size=args.batch_size,
+        is_training=True,
+        tokenizer=tokenizer,
+        pretrained_weights=args.config_name,
+    )
+
     ## Train!
     logger.info("Training model")
     global_step = 1
@@ -119,12 +132,14 @@ def train(args):
 
         if args.model_type in ["xlnet", "xlm"]:
             inputs.update({ "cls_index": batch[5], "p_mask": batch[6] })
-            if args.version_2_with_negative:
+            if args.has_unanswerable:
                 inputs.update({ "is_impossible": batch[7] })
             if hasattr(model, "config") and hasattr(model.config, "lang2id"):
-                inputs.update(
-                    {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(args.device)}
-                )
+                inputs.update({
+                    "langs": (
+                        torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id
+                    ).to(args.device),
+                })
 
         outputs = model(**inputs)
         # model outputs are always tuple in transformers (see doc)
@@ -145,18 +160,17 @@ def train(args):
             global_step += 1
 
             # Log metrics
-            if (
-                args.local_rank in [-1, 0]
-                and args.logging_steps > 0
-                and global_step % args.logging_steps == 0
-            ):
+            if (args.log_interval > 0 and global_step % args.log_interval == 0):
+                # TODO: It is OK to have moved these before the evaluation right?
+                logstr = f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
+
                 # Only evaluate when single GPU otherwise metrics may not average well
                 if args.local_rank == -1 and args.evaluate_during_training:
                     results = evaluate(args, model, tokenizer)
                     for key, value in results.items():
-                        tb_writer.add_scalar(f"eval_{key}", value, global_step)
-                tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+                        logstr += f" eval_{key}={value};"
+
+                logger.info(f"[global step {global_step}] metrics: {logstr}")
                 logging_loss = tr_loss
 
             # Save model checkpoint
@@ -168,14 +182,18 @@ def train(args):
     return
 
 def evaluate(args, model, tokenizer, prefix=""):
-    # TODO: Data loading
-#     dataset, examples, features = load_and_cache_examples(args, tokenizer, evaluate=True, output_examples=True)
+    examples, features, eval_dataloader = data.load_dataloader(
+        args.validation,
+        max_seq_length=args.max_seq_len,
+        doc_stride=args.doc_stride,
+        max_query_length=args.max_query_len,
+        threads=args.num_workers,
+        batch_size=args.batch_size,
+        is_training=False,
+        tokenizer=tokenizer,
+        pretrained_weights=args.config_name,
+    )
 
-    # Note that DistributedSampler samples randomly
-#     eval_sampler = SequentialSampler(dataset)
-#     eval_dataloader = DataLoader(dataset, sampler=eval_sampler, batch_size=args.batch_size)
-
-    # Eval!
     logger.info("***** Running evaluation {} *****".format(prefix))
 
     all_results = []
@@ -243,11 +261,11 @@ def evaluate(args, model, tokenizer, prefix=""):
     logger.info("  Evaluation done in total %f secs (%f sec per example)", evalTime, evalTime / len(dataset))
 
     # Compute predictions
-    output_prediction_file = os.path.join(args.output_dir, "predictions_{}.json".format(prefix))
-    output_nbest_file = os.path.join(args.output_dir, "nbest_predictions_{}.json".format(prefix))
+    output_prediction_file = os.path.join(args.output_data_dir, "predictions_{}.json".format(prefix))
+    output_nbest_file = os.path.join(args.output_data_dir, "nbest_predictions_{}.json".format(prefix))
 
-    if args.version_2_with_negative:
-        output_null_log_odds_file = os.path.join(args.output_dir, "null_odds_{}.json".format(prefix))
+    if args.has_unanswerable:
+        output_null_log_odds_file = os.path.join(args.output_data_dir, "null_odds_{}.json".format(prefix))
     else:
         output_null_log_odds_file = None
 
@@ -261,7 +279,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             features,
             all_results,
             args.n_best_size,
-            args.max_answer_length,
+            args.max_answer_len,
             output_prediction_file,
             output_nbest_file,
             output_null_log_odds_file,
@@ -277,14 +295,14 @@ def evaluate(args, model, tokenizer, prefix=""):
             features,
             all_results,
             args.n_best_size,
-            args.max_answer_length,
-            args.do_lower_case,
+            args.max_answer_len,
+            args.uncased_model,
             output_prediction_file,
             output_nbest_file,
             output_null_log_odds_file,
             logger.level < logging.INFO,
             args.has_unanswerable,
-            args.null_score_diff_threshold,
+            args.null_score_diff_thresh,
             tokenizer,
         )
 
