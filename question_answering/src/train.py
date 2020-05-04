@@ -2,6 +2,7 @@
 
 # Python Built-Ins:
 import logging
+import os
 import random
 
 # External Dependencies:
@@ -13,6 +14,7 @@ from transformers.data.metrics import squad_metrics
 
 # Local Dependencies:
 import config
+import data
 
 
 logger = logging.getLogger("train")
@@ -27,9 +29,9 @@ def set_seed(args):
             torch.cuda.manual_seed_all(args.seed)
 
 
-def save_progress(model, args):
+def save_progress(model, args, checkpoint=None, optimizer=None, scheduler=None):
     """Save the model and associated tokenizer"""
-    logger.info("Saving model checkpoint to %s", args.model_dir)
+    logger.info("Saving current model to %s", args.model_dir)
 
     # Save a trained model, configuration and tokenizer using `save_pretrained()`.
     # They can then be reloaded using `from_pretrained()`
@@ -40,6 +42,18 @@ def save_progress(model, args):
 
     # Good practice: save your training arguments together with the trained model
     torch.save(args, os.path.join(args.model_dir, "training_args.bin"))
+
+    if checkpoint is not None:
+        assert optimizer and scheduler, "Must supply optimizer and scheduler args when saving checkpoints"
+        ckpt_dir = os.path.join(args.checkpoint_dir, f"checkpoint-{checkpoint}")
+        logger.info("Saving checkpoint %s", checkpoint)
+        os.makedirs(ckpt_dir, exist_ok=True)
+        model_to_save.save_pretrained(ckpt_dir)
+        tokenizer.save_pretrained(ckpt_dir)
+        torch.save(args, os.path.join(ckpt_dir, "training_args.bin"))
+        torch.save(optimizer.state_dict(), os.path.join(ckpt_dir, "optimizer.pt"))
+        torch.save(scheduler.state_dict(), os.path.join(ckpt_dir, "scheduler.pt"))
+        logger.info("Checkpoint %s saved", checkpoint)
 
 
 def train(args):
@@ -146,23 +160,11 @@ def train(args):
                 logging_loss = tr_loss
 
             # Save model checkpoint
-#             if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
-#                 output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
-#                 if not os.path.exists(output_dir):
-#                     os.makedirs(output_dir)
-#                 # Take care of distributed/parallel training
-#                 model_to_save = model.module if hasattr(model, "module") else model
-#                 model_to_save.save_pretrained(output_dir)
-#                 tokenizer.save_pretrained(output_dir)
+            if args.checkpoint_interval > 0 and global_step % args.checkpoint_interval == 0:
+                save_progress(model, args, checkpoint=global_step, optimizer=optimizer, scheduler=scheduler)
 
-#                 torch.save(args, os.path.join(output_dir, "training_args.bin"))
-#                 logger.info("Saving model checkpoint to %s", output_dir)
-
-#                 torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-#                 torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
-#                 logger.info("Saving optimizer and scheduler states to %s", output_dir)
-
-    logger.info("TODO: Train a model!")
+    logger.info("Training complete")
+    save_progress(model, args)
     return
 
 def evaluate(args, model, tokenizer, prefix=""):
