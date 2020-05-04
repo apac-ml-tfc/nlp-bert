@@ -96,6 +96,13 @@ def parse_args():
     )
 
     # I/O Settings:
+    parser.add_argument("--checkpoint-dir", type=str,
+        default=hps.get("checkpoint-dir", "/opt/ml/checkpoints")
+    )
+    parser.add_argument("--checkpoint-interval", type=int,
+        default=hps.get("checkpoint-interval", 0),
+        help="Steps between saving checkpoints (set 0 to disable)"
+    )
     parser.add_argument("--log-level", default=hps.get("log-level", logging.INFO),
         help="Log level (per Python specs, string or int)."
     )
