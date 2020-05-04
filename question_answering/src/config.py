@@ -44,16 +44,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train HuggingFace BERT for Q&A")
 
     ## Network parameters:
-    parser.add_argument("--base-model", type=str, default=hps.get("base-model", "bert-base-uncased")
-        help="Base pre-trained model to fine-tune"
-    )
     parser.add_argument(
         "--config-name", type=str,
-        default=hps.get("config-name", None),
+        default=hps.get("config-name", "bert-base-uncased"),
         help=f"Path to pre-trained model or shortcut name selected in the list: {', '.join(ALL_MODELS)}"
     )
     parser.add_argument(
-        "--model-type", type=str, default=hps.get("model-type", None),
+        "--model-type", type=str, default=hps.get("model-type", "bert"),
         help=f"Model type selected in the list: {', '.join(MODEL_TYPES)}"
     )
 
