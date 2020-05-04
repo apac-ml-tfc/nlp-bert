@@ -80,7 +80,8 @@ def parse_args():
     parser.add_argument("--n-best-size", type=int, default=hps.get("n-best-size", 20),
         help="The total number of n-best predictions to generate in the nbest_predictions.json output file."
     )
-    parser.add_argument("--null-score-diff-thresh", type=float, default("null-score-diff-thresh", 0.0),
+    parser.add_argument("--null-score-diff-thresh", type=float,
+        default=hps.get("null-score-diff-thresh", 0.0),
         help="If null_score - best_non_null is greater than the threshold predict null."
     )
 
