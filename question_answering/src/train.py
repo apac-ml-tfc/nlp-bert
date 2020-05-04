@@ -77,6 +77,24 @@ def train(args):
 
     model.to(device)
 
+    _, _, train_dataloader = data.load_dataloader(
+        args.train,
+        max_seq_length=args.max_seq_len,
+        doc_stride=args.doc_stride,
+        max_query_length=args.max_query_len,
+        threads=args.num_workers,
+        batch_size=args.batch_size,
+        is_training=True,
+        tokenizer=tokenizer,
+        pretrained_weights=args.config_name,
+    )
+
+#     if args.max_steps > 0:
+#         t_total = args.max_steps
+#         args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.grad_acc_steps) + 1
+#     else:
+    t_total = len(train_dataloader) // args.grad_acc_steps * args.epochs
+
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
@@ -92,18 +110,6 @@ def train(args):
     optimizer = txf.AdamW(optimizer_grouped_parameters, lr=args.lr, eps=args.adam_epsilon)
     scheduler = txf.get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
-    )
-
-    _, _, train_dataloader = data.load_dataloader(
-        args.train,
-        max_seq_length=args.max_seq_len,
-        doc_stride=args.doc_stride,
-        max_query_length=args.max_query_len,
-        threads=args.num_workers,
-        batch_size=args.batch_size,
-        is_training=True,
-        tokenizer=tokenizer,
-        pretrained_weights=args.config_name,
     )
 
     ## Train!
@@ -323,6 +329,7 @@ if __name__ == "__main__":
         pass
     logger.setLevel(args.log_level)
 
+    logger.info("Starting!")
     set_seed(args)
 
     # Start training:
