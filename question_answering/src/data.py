@@ -1,34 +1,52 @@
 # Python Built-Ins:
+import logging
 import os
 
 # External Dependencies:
+import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import SquadV1Processor, squad_convert_examples_to_features, BertTokenizer
+from transformers import squad_convert_examples_to_features, SquadV1Processor, SquadV2Processor
 
 
-def load_dataloader(data_path, max_seq_length=384, doc_stride=128, max_query_length=64, threads=1, batch_size=32, is_training=True, tokenizer=BertTokenizer, pretrained_weights='bert-base-uncased', processor=SquadV1Processor()):
-    '''
-    Load Dataset into DataLoader with predetermined parameters and return features and examples as well (needed for evaluation)
-    
-    data_path: Path to either a JSON file to be loaded, or a folder containing exactly one JSON file.
-    max_seq_length: max len of tokens in sentence
-    doc_stride: stride length of document
-    max_query_length: max len of query
-    threads: num of threads used
-    is_training: whether examples are for training
-    tokenizer: type of Tokenizer used
-    pretrained_weights: name of weights used to initialise model and tokenizer
-    processor: preprocessing class by huggingface to get each example
-    
-    :return: examples - examples parsed by processor
-             features - features of examples
-             dataloader - DataLoader of Dataset created
-    
-    '''
-    tokenizer = tokenizer.from_pretrained(pretrained_weights)
+logger = logging.getLogger("data")
+
+
+def get_dataloader(dataset, batch_size=32, evaluate=False):
+    sampler = SequentialSampler(dataset) if evaluate else RandomSampler(dataset)
+    return DataLoader(dataset, sampler=sampler, batch_size=batch_size)
+
+def load_and_cache_examples(
+    data_path,
+    tokenizer,
+    args,
+    evaluate=False,
+    output_examples=False,
+):
+    """Kind of like the HuggingFace function, but better aligned to SageMaker workflow
+
+    data_path : str
+        Either a path to a JSON file or a folder containing exactly one JSON file - the data to load
+    tokenizer : transformers.Tokenizer
+        Companion tokenizer for the model
+    args : argparse.Namespace
+        Extra parameters controlling e.g. caching, length limits etc.
+    evaluate : bool=False
+        Whether the dataset is for evaluation (different featurizations than training)
+    output_examples : bool=False
+        Whether to return additional features (for evaluation etc.)
+
+    Returns
+    -------
+    dataset : torch.Dataset
+        Processed SQuAD dataset
+    examples : unknown, optional
+        Processed SQuAD examples IF output_examples is True, else only dataset is returned
+    features : unknown, optional
+        Processed SQuAD features IF output_examples is True, else only dataset is returned
+    """
     if os.path.isfile(data_path):
         # A specific file
-        data_dir = os.path.dirname(data_path) or "."
+        input_dir = os.path.dirname(data_path) or "."
         filename = os.path.basename(data_path)
     elif os.path.isdir(data_path):
         # A folder
@@ -36,7 +54,7 @@ def load_dataloader(data_path, max_seq_length=384, doc_stride=128, max_query_len
         assert len(files) == 1, (
             f"data_path folder must contain exactly one JSON file. Found: {files}"
         )
-        data_dir = data_path
+        input_dir = data_path
         filename = files[0]
     else:
         # Neither file nor folder??
@@ -44,22 +62,46 @@ def load_dataloader(data_path, max_seq_length=384, doc_stride=128, max_query_len
             f"data_path must resolve to a file or a folder containing exactly one JSON file. Got {data_path}"
         )
 
-    examples = processor.get_train_examples(data_dir, filename)
-    features, dataset = squad_convert_examples_to_features(
-        examples=examples,
-        tokenizer=tokenizer,
-        max_seq_length=max_seq_length,
-        doc_stride=doc_stride,
-        max_query_length=max_query_length,
-        is_training=is_training,
-        return_dataset="pt",
-        threads=threads,
+    cached_features_file = os.path.join(
+        input_dir,
+        "cached_{}_{}_{}".format(
+            "dev" if evaluate else "train",
+            list(filter(None, args.config_name.split("/"))).pop(),
+            str(args.max_seq_len),
+        ),
     )
-    if is_training:
-        sampler = RandomSampler(dataset)
+
+    # Init features and dataset from cache if it exists
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        logger.info("Loading features from cached file %s", cached_features_file)
+        features_and_dataset = torch.load(cached_features_file)
+        features, dataset, examples = (
+            features_and_dataset["features"],
+            features_and_dataset["dataset"],
+            features_and_dataset["examples"],
+        )
     else:
-        sampler = SequentialSampler(dataset)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
-    
-    return examples, features, dataloader
-    
+        logger.info("Creating features from dataset file at %s", input_dir)
+        processor = SquadV2Processor() if args.has_unanswerable else SquadV1Processor()
+        if evaluate:
+            examples = processor.get_dev_examples(input_dir, filename=filename)
+        else:
+            examples = processor.get_train_examples(input_dir, filename=filename)
+
+        features, dataset = squad_convert_examples_to_features(
+            examples=examples,
+            tokenizer=tokenizer,
+            max_seq_length=args.max_seq_len,
+            doc_stride=args.doc_stride,
+            max_query_length=args.max_query_len,
+            is_training=not evaluate,
+            return_dataset="pt",
+            threads=args.num_workers,
+        )
+
+        logger.info("Saving features into cached file %s", cached_features_file)
+        torch.save({ "features": features, "dataset": dataset, "examples": examples }, cached_features_file)
+
+    if output_examples:
+        return dataset, examples, features
+    return dataset

@@ -82,17 +82,14 @@ def train(args):
     model.to(device)
 
     logger.info("Creating data loader")
-    _, _, train_dataloader = data.load_dataloader(
+    train_dataset = data.load_and_cache_examples(
         args.train,
-        max_seq_length=args.max_seq_len,
-        doc_stride=args.doc_stride,
-        max_query_length=args.max_query_len,
-        threads=args.num_workers,
-        batch_size=args.batch_size,
-        is_training=True,
-        tokenizer=tokenizer,
-        pretrained_weights=args.config_name,
+        tokenizer,
+        args,
+        evaluate=False,
+        output_examples=False,
     )
+    train_dataloader = data.get_dataloader(train_dataset, args.per_gpu_train_batch_size, evaluate=False)
 
 #     if args.max_steps > 0:
 #         t_total = args.max_steps
@@ -173,21 +170,30 @@ def train(args):
 
                 # Log metrics
                 if (args.log_interval > 0 and global_step % args.log_interval == 0):
-                    # TODO: It is OK to have moved these before the evaluation right?
-                    logstr = f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
+                    logstr = (
+                        f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
+                    )
 
                     # Only evaluate when single GPU otherwise metrics may not average well
-                    logger.info(f"[Epoch {epoch} Global Step {global_step}] Starting evaluation...")
-                    results = evaluate(args, model, tokenizer, device, prefix=global_step)
-                    for key, value in results.items():
-                        logstr += f" eval_{key}={value};"
+                    if args.validation:
+                        logger.info(f"[Epoch {epoch} Global Step {global_step}] Starting evaluation...")
+                        results = evaluate(args, model, tokenizer, device, prefix=global_step)
+                        for key, value in results.items():
+                            logstr += f" eval_{key}={value:.3f};"
 
                     logger.info(f"[Epoch {epoch} Global Step {global_step}] Metrics: {logstr}")
                     logging_loss = tr_loss
 
                 # Save model checkpoint
                 if args.checkpoint_interval > 0 and global_step % args.checkpoint_interval == 0:
-                    save_progress(model, tokenizer, args, checkpoint=global_step, optimizer=optimizer, scheduler=scheduler)
+                    save_progress(
+                        model,
+                        tokenizer,
+                        args,
+                        checkpoint=global_step,
+                        optimizer=optimizer,
+                        scheduler=scheduler
+                    )
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 break
@@ -199,17 +205,14 @@ def train(args):
     return
 
 def evaluate(args, model, tokenizer, device, prefix=""):
-    examples, features, eval_dataloader = data.load_dataloader(
+    eval_dataset, examples, features = data.load_and_cache_examples(
         args.validation,
-        max_seq_length=args.max_seq_len,
-        doc_stride=args.doc_stride,
-        max_query_length=args.max_query_len,
-        threads=args.num_workers,
-        batch_size=args.batch_size,
-        is_training=False,
-        tokenizer=tokenizer,
-        pretrained_weights=args.config_name,
+        tokenizer,
+        args,
+        evaluate=True,
+        output_examples=True,
     )
+    eval_dataloader = data.get_dataloader(eval_dataset, args.per_gpu_eval_batch_size, evaluate=True)
 
     all_results = []
     start_time = timeit.default_timer()
@@ -278,7 +281,7 @@ def evaluate(args, model, tokenizer, device, prefix=""):
     logger.info(
         "  Evaluation done in total %f secs (%f sec per example)",
         evalTime,
-        evalTime / (eval_batches * args.batch_size)
+        evalTime / (eval_batches * args.per_gpu_eval_batch_size)
     )
 
     # Compute predictions
@@ -335,7 +338,8 @@ def evaluate(args, model, tokenizer, device, prefix=""):
 if __name__ == "__main__":
     args = config.parse_args()
 
-    config.configure_logger(logger, args)
+    for l in (logger, data.logger):
+        config.configure_logger(l, args)
 
     logger.info("Starting!")
     set_seed(args.seed, use_gpus=args.num_gpus > 0)

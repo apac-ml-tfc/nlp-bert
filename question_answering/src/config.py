@@ -95,8 +95,12 @@ def parse_args():
     parser.add_argument("--adam-epsilon", type=float, default=hps.get("adam-epsilon", 1e-8),
         help="Epsilon for Adam optimizer"
     )
-    parser.add_argument("--batch-size", type=int, default=hps.get("batch-size", 8),
-        help="Training mini-batch size"
+    parser.add_argument("--per-gpu-eval-batch-size", type=int, default=hps.get("per-gpu-eval-batch-size", 8),
+        help="Batch size per GPU/CPU for evaluation."
+    )
+    parser.add_argument("--per-gpu-train-batch-size", type=int,
+        default=hps.get("per-gpu-train-batch-size", 8),
+        help="Batch size per GPU/CPU for training."
     )
     parser.add_argument("--epochs", type=int, default=hps.get("epochs", 3),
         help="Number of epochs to train for"
@@ -158,6 +162,10 @@ def parse_args():
     )
     parser.add_argument("--output-data-dir", type=str,
         default=os.environ.get("SM_OUTPUT_DATA_DIR", "/opt/ml/output/data")
+    )
+    parser.add_argument("--overwrite-cache", type=boolean_hyperparam,
+        default=hps.get("overwrite-cache", False),
+        help="Overwrite and ignore any cached files (data preprocessing, etc)"
     )
     parser.add_argument("--train", type=str, default=os.environ.get("SM_CHANNEL_TRAIN"))
     parser.add_argument("--validation", type=str, default=os.environ.get("SM_CHANNEL_VALIDATION"))
