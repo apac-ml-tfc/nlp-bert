@@ -5,7 +5,7 @@ import os
 # External Dependencies:
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import squad_convert_examples_to_features, SquadV1Processor, SquadV2Processor
+from transformers import squad_convert_examples_to_features, SquadV1Processor, SquadV2Processor, AutoTokenizer
 
 
 logger = logging.getLogger("data")
@@ -14,6 +14,65 @@ logger = logging.getLogger("data")
 def get_dataloader(dataset, batch_size=32, evaluate=False):
     sampler = SequentialSampler(dataset) if evaluate else RandomSampler(dataset)
     return DataLoader(dataset, sampler=sampler, batch_size=batch_size)
+
+
+def read_examples(input_data, tokenizer=AutoTokenizer.from_pretrained('bert-base-uncased'), max_seq_length=384, doc_stride=128, max_query_length=64, output_examples=False):
+    def is_whitespace(c):
+        if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
+            return True
+        return False
+
+    examples = []
+    for entry in input_data:
+        for paragraph in entry["paragraphs"]:
+            paragraph_text = paragraph["context"]
+            doc_tokens = []
+            prev_is_whitespace = True
+            for c in paragraph_text:
+                if is_whitespace(c):
+                    prev_is_whitespace = True
+                else:
+                    if prev_is_whitespace:
+                        doc_tokens.append(c)
+                    else:
+                        doc_tokens[-1] += c
+                    prev_is_whitespace = False
+
+            for qa in paragraph["qas"]:
+                qas_id = qa["id"]
+                question_text = qa["question"]
+                start_position = None
+                end_position = None
+                orig_answer_text = None
+                is_impossible = False
+                start_position = -1
+                end_position = -1
+
+                example = SquadExample(
+                    qas_id=qas_id,
+                    question_text=question_text,
+                    doc_tokens=doc_tokens,
+                    orig_answer_text=orig_answer_text,
+                    start_position=start_position,
+                    end_position=end_position,
+                    is_impossible=is_impossible)
+                examples.append(example)
+    
+    features, dataset = squad_convert_examples_to_features(
+        examples=examples,
+        tokenizer=tokenizer,
+        max_seq_length=max_seq_length,
+        doc_stride=doc_stride,
+        max_query_length=max_query_length,
+        is_training=False,
+        return_dataset="pt",
+        threads=1,
+    )
+    
+    if output_examples:
+        return dataset, examples, features
+    return dataset
+
 
 def load_and_cache_examples(
     data_path,
