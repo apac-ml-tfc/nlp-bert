@@ -207,10 +207,12 @@ def evaluate(args, model, tokenizer, device, prefix=""):
 
     all_results = []
     start_time = timeit.default_timer()
+    eval_batches = 0
 
     for batch in eval_dataloader:
         model.eval()
         batch = tuple(t.to(device) for t in batch)
+        eval_batches += 1
 
         with torch.no_grad():
             inputs = {
@@ -267,7 +269,11 @@ def evaluate(args, model, tokenizer, device, prefix=""):
             all_results.append(result)
 
     evalTime = timeit.default_timer() - start_time
-    logger.info("  Evaluation done in total %f secs (%f sec per example)", evalTime, evalTime / len(dataset))
+    logger.info(
+        "  Evaluation done in total %f secs (%f sec per example)",
+        evalTime,
+        evalTime / (eval_batches * args.batch_size)
+    )
 
     # Compute predictions
     output_prediction_file = os.path.join(args.output_data_dir, "predictions_{}.json".format(prefix))
