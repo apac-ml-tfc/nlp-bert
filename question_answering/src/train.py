@@ -25,13 +25,14 @@ def to_list(tensor):
     return tensor.detach().cpu().tolist()
 
 
-def set_seed(args):
-    if args.seed:
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        if args.num_gpus > 0:
-            torch.cuda.manual_seed_all(args.seed)
+def set_seed(seed, use_gpus=True):
+    """Seed all the random number generators we can think of for reproducibility"""
+    if seed:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if use_gpus:
+            torch.cuda.manual_seed_all(seed)
 
 
 def save_progress(model, args, checkpoint=None, optimizer=None, scheduler=None):
@@ -62,9 +63,7 @@ def save_progress(model, args, checkpoint=None, optimizer=None, scheduler=None):
 
 
 def train(args):
-    # Added here for reproductibility
-    set_seed(args)
-
+    logger.info("Creating config and model")
     config = txf.AutoConfig.from_pretrained(args.config_name)
     tokenizer = txf.AutoTokenizer.from_pretrained(
         args.config_name,
@@ -79,8 +78,10 @@ def train(args):
     # TODO: Multi-GPU
     device = torch.device("cuda" if torch.cuda.is_available() and args.num_gpus else "cpu")
 
+    logger.info("Loading model to %s", device)
     model.to(device)
 
+    logger.info("Creating data loader")
     _, _, train_dataloader = data.load_dataloader(
         args.train,
         max_seq_length=args.max_seq_len,
@@ -329,18 +330,10 @@ def evaluate(args, model, tokenizer, device, prefix=""):
 if __name__ == "__main__":
     args = config.parse_args()
 
-    # Set up logger:
-    logging.basicConfig()
-    logger = logging.getLogger("train")
-    try:
-        # e.g. convert "20" to 20, but leave "DEBUG" alone
-        args.log_level = int(args.log_level)
-    except ValueError:
-        pass
-    logger.setLevel(args.log_level)
+    config.configure_logger(logger, args)
 
     logger.info("Starting!")
-    set_seed(args)
+    set_seed(args.seed, use_gpus=args.num_gpus > 0)
 
     # Start training:
     train(args)

@@ -5,18 +5,24 @@ import argparse
 import json
 import logging
 import os
+import sys
 
 # External Dependencies:
+import torch
 import transformers as txf
-
-
-logging.basicConfig()
-logger = logging.getLogger("config")
 
 
 MODEL_CONFIG_CLASSES = list(txf.MODEL_FOR_QUESTION_ANSWERING_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in MODEL_CONFIG_CLASSES), (),)
+
+
+def configure_logger(logger, args):
+    """Configure a logger's level and handler (since base container already configures top level logging)"""
+    consolehandler = logging.StreamHandler(sys.stdout)
+    consolehandler.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s"))
+    logger.addHandler(consolehandler)
+    logger.setLevel(args.log_level)
 
 
 def boolean_hyperparam(raw):
@@ -89,10 +95,10 @@ def parse_args():
     parser.add_argument("--adam-epsilon", type=float, default=hps.get("adam-epsilon", 1e-8),
         help="Epsilon for Adam optimizer"
     )
-    parser.add_argument("--batch-size", type=int, default=hps.get("batch-size", 4),
+    parser.add_argument("--batch-size", type=int, default=hps.get("batch-size", 8),
         help="Training mini-batch size"
     )
-    parser.add_argument("--epochs", type=int, default=hps.get("epochs", 10),
+    parser.add_argument("--epochs", type=int, default=hps.get("epochs", 3),
         help="Number of epochs to train for"
     )
     parser.add_argument("--grad-acc-steps", type=int, default=hps.get("grad-acc-steps", 1),
@@ -114,7 +120,7 @@ def parse_args():
         help="Random seed fixed for reproducibility (off by default)"
     )
     parser.add_argument("--warmup-steps", type=int, default=hps.get("warmup-steps", 0),
-        help="Linear warmup over warmup_steps."
+        help="Linear warmup over warmup steps."
     )
     parser.add_argument("--wd", "--weight-decay", type=float,
         default=hps.get("wd", hps.get("weight-decay", 0.0)),
@@ -156,14 +162,30 @@ def parse_args():
     args = parser.parse_args()
 
     ## Post-argparse validations & transformations:
+
+    # Set up log level: (Convert e.g. "20" to 20 but leave "DEBUG" alone)
+    try:
+        args.log_level = int(args.log_level)
+    except ValueError:
+        pass
+    print(f"Setting up logging with level {args.log_level}")
+    # Note basicConfig has already been called by our parent container, so calling it won't do anything.
+    logger = logging.getLogger("config")
+    configure_logger(logger, args)
+
     if args.uncased_model is None:
         if "uncased" in args.config_name:
-            logger.info(f"Assuming uncased model from name '{args.config_name}'")
+            logger.warning(f"Assuming uncased model from name '{args.config_name}'")
         elif "cased" in args.config_name:
-            logger.info(f"Assuming cased model from name '{args.config_name}'")
+            logger.warning(f"Assuming cased model from name '{args.config_name}'")
         else:
             parser.error(
                 f"--uncased-model not specified and could not infer from --config-name '{args.config_name}'"
             )
+
+    if args.num_gpus and not torch.cuda.is_available():
+        parser.error(
+            f"Got --num-gpus {args.num_gpus} but torch says cuda is not available: Cannot use GPUs"
+        )
 
     return args
