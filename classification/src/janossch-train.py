@@ -41,6 +41,11 @@ def format_time(elapsed):
     # Format as hh:mm:ss
     return str(datetime.timedelta(seconds=elapsed_rounded))
 
+# Function to calculate the accuracy of our predictions vs labels
+def flat_accuracy(preds, labels):
+    pred_flat = np.argmax(preds, axis=1).flatten()
+    labels_flat = labels.flatten()
+    return np.sum(pred_flat == labels_flat) / len(labels_flat)
 
 
 def set_seed(args):
@@ -52,8 +57,8 @@ def set_seed(args):
         if args.num_gpus > 0:
             torch.cuda.manual_seed_all(args.seed)
 
-def save_progress(model, args, checkpoint=None, optimizer=None, scheduler=None):
-    return
+def save(model, model_dir):
+    model.export(os.path.join(model_dir, 'bert'))
 
 
 def prepare_data_and_tokenize(args, tokenizer):
@@ -283,10 +288,7 @@ def train(args):
             b_input_ids = batch[0].to(device)
             b_input_mask = batch[1].to(device)
             b_labels = batch[2].to(device)
-            logger.debug('b_input_ids: {}'.format(b_input_ids))
-            logger.debug('b_input_mask: {}'.format(b_input_mask))
-            logger.debug('b_labels: {}'.format(b_labels))
-
+              
             # Always clear any previously calculated gradients before performing a
             # backward pass. PyTorch doesn't do this automatically because 
             # accumulating the gradients is "convenient while training RNNs". 
@@ -429,10 +431,7 @@ def train(args):
     print("Training complete!")
 
     print("Total training took {:} (h:mm:ss)".format(format_time(time.time()-total_t0)))
-
-    raise Exception('WOW')
-
-    return 
+    return model
 
 
 def evaluate(args, model, tokenizer, device, prefix=""):
@@ -492,4 +491,5 @@ if __name__ =='__main__':
     logger.debug(args)
     
     # Start training:
-    train(args)
+    net = train(args)
+    save(net, args.model_dir)
