@@ -179,7 +179,6 @@ def parse_args():
         args.log_level = int(args.log_level)
     except ValueError:
         pass
-    print(f"Setting up logging with level {args.log_level}")
     # Note basicConfig has already been called by our parent container, so calling it won't do anything.
     logger = logging.getLogger("config")
     configure_logger(logger, args)

@@ -170,8 +170,9 @@ def train(args):
 
                 # Log metrics
                 if (args.log_interval > 0 and global_step % args.log_interval == 0):
-                    logstr = (
-                        f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
+                    logstr = "lr={:.5e}; loss={:.5e};".format(
+                        scheduler.get_lr()[0],
+                        (tr_loss - logging_loss) / args.log_interval
                     )
 
                     # Only evaluate when single GPU otherwise metrics may not average well
@@ -179,7 +180,7 @@ def train(args):
                         logger.info(f"[Epoch {epoch} Global Step {global_step}] Starting evaluation...")
                         results = evaluate(args, model, tokenizer, device, prefix=global_step)
                         for key, value in results.items():
-                            logstr += f" eval_{key}={value:.3f};"
+                            logstr += f" eval_{key}={value:.5e};"
 
                     logger.info(f"[Epoch {epoch} Global Step {global_step}] Metrics: {logstr}")
                     logging_loss = tr_loss
@@ -341,6 +342,7 @@ if __name__ == "__main__":
     for l in (logger, data.logger):
         config.configure_logger(l, args)
 
+    logger.info("Loaded arguments: %s", args)
     logger.info("Starting!")
     set_seed(args.seed, use_gpus=args.num_gpus > 0)
 
