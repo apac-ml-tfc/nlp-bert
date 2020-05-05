@@ -1,64 +1,68 @@
-# Python Built-Ins:
+
+import logging
 import os
-
-# External Dependencies:
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import SquadV1Processor, squad_convert_examples_to_features, BertTokenizer
+import random
 
 
-def load_dataloader(data_path, max_seq_length=384, doc_stride=128, max_query_length=64, threads=1, batch_size=32, is_training=True, tokenizer=BertTokenizer, pretrained_weights='bert-base-uncased', processor=SquadV1Processor()):
-    '''
-    Load Dataset into DataLoader with predetermined parameters and return features and examples as well (needed for evaluation)
-    
-    data_path: Path to either a JSON file to be loaded, or a folder containing exactly one JSON file.
-    max_seq_length: max len of tokens in sentence
-    doc_stride: stride length of document
-    max_query_length: max len of query
-    threads: num of threads used
-    is_training: whether examples are for training
-    tokenizer: type of Tokenizer used
-    pretrained_weights: name of weights used to initialise model and tokenizer
-    processor: preprocessing class by huggingface to get each example
-    
-    :return: examples - examples parsed by processor
-             features - features of examples
-             dataloader - DataLoader of Dataset created
-    
-    '''
-    tokenizer = tokenizer.from_pretrained(pretrained_weights)
-    if os.path.isfile(data_path):
-        # A specific file
-        data_dir = os.path.dirname(data_path) or "."
-        filename = os.path.basename(data_path)
-    elif os.path.isdir(data_path):
-        # A folder
-        files = list(filter(lambda n: n.lower().endswith(".json"), os.listdir(data_path)))
-        assert len(files) == 1, (
-            f"data_path folder must contain exactly one JSON file. Found: {files}"
-        )
-        data_dir = data_path
-        filename = files[0]
+import numpy as np
+import torch
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+
+from transformers import glue_output_modes as output_modes
+from transformers import glue_processors as processors
+from transformers import glue_convert_examples_to_features as convert_examples_to_features
+
+logger = logging.getLogger(__name__)
+
+
+def load_and_cache_examples(args, task, tokenizer, evaluate=False):
+    if args.local_rank not in [-1, 0] and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
+
+    processor = processors[task]()
+    output_mode = output_modes[task]
+    # Load data features from cache or dataset file
+    cached_features_file = os.path.join(args.train, 'cached_{}_{}_{}_{}'.format(
+        'dev' if evaluate else 'train',
+        list(filter(None, args.model_name.split('/'))).pop(),
+        str(args.max_seq_length),
+        str(task)))
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        logger.info("Loading features from cached file %s", cached_features_file)
+        features = torch.load(cached_features_file)
     else:
-        # Neither file nor folder??
-        raise ValueError(
-            f"data_path must resolve to a file or a folder containing exactly one JSON file. Got {data_path}"
+        logger.info("Creating features from dataset file at %s", args.train)
+        label_list = processor.get_labels()
+        if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
+            # HACK(label indices are swapped in RoBERTa pretrained model)
+            label_list[1], label_list[2] = label_list[2], label_list[1] 
+        print(os.listdir(args.train))
+        examples = processor.get_dev_examples(args.validation) if evaluate else processor.get_train_examples(args.train)
+        features = convert_examples_to_features(examples,
+                                                tokenizer,
+                                                label_list=label_list,
+                                                max_length=args.max_seq_length,
+                                                output_mode=output_mode,
+                                                pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
+                                                pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
         )
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving features into cached file %s", cached_features_file)
+            torch.save(features, cached_features_file)
 
-    examples = processor.get_train_examples(data_dir, filename)
-    features, dataset = squad_convert_examples_to_features(
-        examples=examples,
-        tokenizer=tokenizer,
-        max_seq_length=max_seq_length,
-        doc_stride=doc_stride,
-        max_query_length=max_query_length,
-        is_training=is_training,
-        return_dataset="pt",
-        threads=threads,
-    )
-    if is_training:
-        sampler = RandomSampler(dataset)
-    else:
-        sampler = SequentialSampler(dataset)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=batch_size)
-    
-    return examples, features, dataloader
+    if args.local_rank == 0 and not evaluate:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
+
+    # Convert to Tensors and build dataset
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+    if output_mode == "classification":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    elif output_mode == "regression":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
+ 
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    return dataset
