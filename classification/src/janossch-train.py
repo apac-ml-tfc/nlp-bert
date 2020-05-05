@@ -336,7 +336,7 @@ def train(args):
 
         print("")
         print("  Average training loss: {0:.2f}".format(avg_train_loss))
-        print("  Training epcoh took: {:}".format(training_time))
+        print("  Training epoch took: {:}".format(training_time))
 
         # ========================================
         #               Validation
