@@ -204,9 +204,13 @@ def train(args):
             #   [0]: input ids 
             #   [1]: attention masks
             #   [2]: labels 
+            #logger.debug('dataset: {}'.format(train_dataset[5]))
             b_input_ids = batch[0].to(device)
             b_input_mask = batch[1].to(device)
             b_labels = batch[2].to(device)
+            logger.debug('b_input_ids: {}'.format(b_input_ids))
+            logger.debug('b_input_mask: {}'.format(b_input_mask))
+            logger.debug('b_labels: {}'.format(b_labels))
 
             # Always clear any previously calculated gradients before performing a
             # backward pass. PyTorch doesn't do this automatically because 
