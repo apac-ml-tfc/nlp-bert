@@ -126,6 +126,31 @@ def train(args):
     model = AutoModelForSequenceClassification.from_pretrained(
                                         args.base_model_name, 
                                         config=config)
+
+#     from transformers import BertForSequenceClassification, AdamW, BertConfig
+
+#     # Load BertForSequenceClassification, the pretrained BERT model with a single 
+#     # linear classification layer on top. 
+#     model = BertForSequenceClassification.from_pretrained(
+#         "bert-base-uncased", # Use the 12-layer BERT model, with an uncased vocab.
+#         num_labels = 2, # The number of output labels--2 for binary classification.
+#                         # You can increase this for multi-class tasks.   
+#         output_attentions = False, # Whether the model returns attentions weights.
+#         output_hidden_states = False, # Whether the model returns all hidden-states.
+#     )
+
+    from transformers import AdamW
+
+
+    # Note: AdamW is a class from the huggingface library (as opposed to pytorch) 
+    # I believe the 'W' stands for 'Weight Decay fix"
+    optimizer = AdamW(model.parameters(),
+                      lr = 2e-5, # args.learning_rate - default is 5e-5, our notebook had 2e-5
+                      eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
+                    )
+
+
+
     
     logger.debug('train set: {}'.format(args.train))
     logger.debug('test set: {}'.format(args.test))
@@ -134,6 +159,9 @@ def train(args):
     # FIXME: this need to go into the SageMaker parts
     # If there's a GPU available...
     if torch.cuda.is_available():    
+        
+        # Tell pytorch to run this model on the GPU.
+        model.cuda()
 
         # Tell PyTorch to use the GPU.    
         device = torch.device("cuda")
@@ -147,7 +175,28 @@ def train(args):
         print('No GPU available, using the CPU instead.')
         device = torch.device("cpu")
     
-    
+    from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
+    # The DataLoader needs to know our batch size for training, so we specify it 
+    # here. For fine-tuning BERT on a specific task, the authors recommend a batch 
+    # size of 16 or 32.
+    batch_size = args.batch_size
+
+    # Create the DataLoaders for our training and validation sets.
+    # We'll take training samples in random order. 
+    train_dataloader = DataLoader(
+                train_dataset,  # The training samples.
+                sampler = RandomSampler(train_dataset), # Select batches randomly
+                batch_size = batch_size # Trains with this batch size.
+            )
+
+    # For validation the order doesn't matter, so we'll just read them sequentially.
+    test_dataloader = DataLoader(
+                test_dataset, # The validation samples.
+                sampler = SequentialSampler(test_dataset), # Pull out batches sequentially.
+                batch_size = batch_size # Evaluate with this batch size.
+            )
+
     
     
     # We'll store a number of quantities such as training and validation loss, 
@@ -159,6 +208,18 @@ def train(args):
     
     epochs = args.epochs
     
+    
+    from transformers import get_linear_schedule_with_warmup
+    # Total number of training steps is [number of batches] x [number of epochs]. 
+    # (Note that this is not the same as the number of training samples).
+    total_steps = len(train_dataloader) * epochs
+
+    # Create the learning rate scheduler.
+    scheduler = get_linear_schedule_with_warmup(optimizer, 
+                                                num_warmup_steps = 0, # Default value in run_glue.py
+                                                num_training_steps = total_steps)
+    
+    
     # For each epoch...
     for epoch_i in range(0, epochs):
 
@@ -168,9 +229,9 @@ def train(args):
 
         # Perform one full pass over the training set.
 
-        logger.info("")
-        logger.info('======== Epoch {:} / {:} ========'.format(epoch_i + 1, epochs))
-        logger.info('Training...')
+        print("")
+        print('======== Epoch {:} / {:} ========'.format(epoch_i + 1, epochs))
+        print('Training...')
 
         # Measure how long the training epoch takes.
         t0 = time.time()
@@ -185,7 +246,7 @@ def train(args):
         model.train()
 
         # For each batch of training data...
-        for step, batch in enumerate(train_dataset):
+        for step, batch in enumerate(train_dataloader):
 
             # Progress update every 40 batches.
             if step % 40 == 0 and not step == 0:
@@ -193,7 +254,7 @@ def train(args):
                 elapsed = format_time(time.time() - t0)
 
                 # Report progress.
-                logger.info('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}.'.format(step, len(train_dataset), elapsed))
+                print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}.'.format(step, len(train_dataloader), elapsed))
 
             # Unpack this training batch from our dataloader. 
             #
@@ -252,14 +313,14 @@ def train(args):
             scheduler.step()
 
         # Calculate the average loss over all of the batches.
-        avg_train_loss = total_train_loss / len(train_dataset)            
+        avg_train_loss = total_train_loss / len(train_dataloader)            
 
         # Measure how long this epoch took.
         training_time = format_time(time.time() - t0)
 
-        logger.info("")
-        logger.info("  Average training loss: {0:.2f}".format(avg_train_loss))
-        logger.info("  Training epcoh took: {:}".format(training_time))
+        print("")
+        print("  Average training loss: {0:.2f}".format(avg_train_loss))
+        print("  Training epcoh took: {:}".format(training_time))
 
         # ========================================
         #               Validation
@@ -267,8 +328,8 @@ def train(args):
         # After the completion of each training epoch, measure our performance on
         # our validation set.
 
-        logger.info("")
-        logger.info("Running Validation...")
+        print("")
+        print("Running Validation...")
 
         t0 = time.time()
 
@@ -282,7 +343,7 @@ def train(args):
         nb_eval_steps = 0
 
         # Evaluate data for one epoch
-        for batch in test_dataset:
+        for batch in test_dataloader:
 
             # Unpack this training batch from our dataloader. 
             #
@@ -326,8 +387,8 @@ def train(args):
 
 
         # Report the final accuracy for this validation run.
-        avg_val_accuracy = total_eval_accuracy / len(test_dataset)
-        logger.info("  Accuracy: {0:.2f}".format(avg_val_accuracy))
+        avg_val_accuracy = total_eval_accuracy / len(test_dataloader)
+        print("  Accuracy: {0:.2f}".format(avg_val_accuracy))
 
         # Calculate the average loss over all of the batches.
         avg_val_loss = total_eval_loss / len(test_dataset)
@@ -335,8 +396,8 @@ def train(args):
         # Measure how long the validation run took.
         validation_time = format_time(time.time() - t0)
 
-        logger.info("  Validation Loss: {0:.2f}".format(avg_val_loss))
-        logger.info("  Validation took: {:}".format(validation_time))
+        print("  Validation Loss: {0:.2f}".format(avg_val_loss))
+        print("  Validation took: {:}".format(validation_time))
 
         # Record all statistics from this epoch.
         training_stats.append(
@@ -350,10 +411,10 @@ def train(args):
             }
         )
 
-    logger.info("")
-    logger.info("Training complete!")
+    print("")
+    print("Training complete!")
 
-    logger.info("Total training took {:} (h:mm:ss)".format(format_time(time.time()-total_t0)))
+    print("Total training took {:} (h:mm:ss)".format(format_time(time.time()-total_t0)))
 
     raise Exception('WOW')
 
@@ -372,7 +433,7 @@ if __name__ =='__main__':
 
     # hyperparameters sent by the client are passed as command-line arguments to the script.
     parser.add_argument('--epochs', type=int, default=4)
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--learning-rate', type=float, default=0.05)
     parser.add_argument('--use-cuda', type=bool, default=False)
 
