@@ -115,6 +115,9 @@ def parse_args():
     parser.add_argument("--max-grad-norm", type=float, default=hps.get("max-grad-norm", 1.0),
         help="Max gradient norm"
     )
+    parser.add_argument("--max-steps", type=int, default=hps.get("max-steps", -1),
+        help="If > 0: set maximum total number of training steps to perform - overriding epochs.",
+    )
     parser.add_argument("--seed", "--random-seed", type=int,
         default=hps.get("seed", hps.get("random-seed", None)),
         help="Random seed fixed for reproducibility (off by default)"

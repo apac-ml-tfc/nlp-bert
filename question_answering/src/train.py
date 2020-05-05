@@ -35,7 +35,7 @@ def set_seed(seed, use_gpus=True):
             torch.cuda.manual_seed_all(seed)
 
 
-def save_progress(model, args, checkpoint=None, optimizer=None, scheduler=None):
+def save_progress(model, tokenizer, args, checkpoint=None, optimizer=None, scheduler=None):
     """Save the model and associated tokenizer"""
     logger.info("Saving current model to %s", args.model_dir)
 
@@ -124,71 +124,78 @@ def train(args):
     steps_trained_in_current_epoch = 0
     tr_loss, logging_loss = 0.0, 0.0
     model.zero_grad()
+    
+    for epoch in range(args.epochs):
+        logger.info(f"[Epoch {epoch}] Starting")
+        for step, batch in enumerate(train_dataloader):
+            model.train()
+            batch = tuple(t.to(device) for t in batch)
 
-    for step, batch in enumerate(train_dataloader):
-        model.train()
-        batch = tuple(t.to(device) for t in batch)
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2],
+                "start_positions": batch[3],
+                "end_positions": batch[4],
+            }
 
-        inputs = {
-            "input_ids": batch[0],
-            "attention_mask": batch[1],
-            "token_type_ids": batch[2],
-            "start_positions": batch[3],
-            "end_positions": batch[4],
-        }
+            if args.model_type in ["xlm", "roberta", "distilbert", "camembert"]:
+                del inputs["token_type_ids"]
 
-        if args.model_type in ["xlm", "roberta", "distilbert", "camembert"]:
-            del inputs["token_type_ids"]
+            if args.model_type in ["xlnet", "xlm"]:
+                inputs.update({ "cls_index": batch[5], "p_mask": batch[6] })
+                if args.has_unanswerable:
+                    inputs.update({ "is_impossible": batch[7] })
+                if hasattr(model, "config") and hasattr(model.config, "lang2id"):
+                    inputs.update({
+                        "langs": (
+                            torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id
+                        ).to(device),
+                    })
 
-        if args.model_type in ["xlnet", "xlm"]:
-            inputs.update({ "cls_index": batch[5], "p_mask": batch[6] })
-            if args.has_unanswerable:
-                inputs.update({ "is_impossible": batch[7] })
-            if hasattr(model, "config") and hasattr(model.config, "lang2id"):
-                inputs.update({
-                    "langs": (
-                        torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id
-                    ).to(device),
-                })
+            outputs = model(**inputs)
+            # model outputs are always tuple in transformers (see doc)
+            loss = outputs[0]
 
-        outputs = model(**inputs)
-        # model outputs are always tuple in transformers (see doc)
-        loss = outputs[0]
+            if args.grad_acc_steps > 1:
+                loss = loss / args.grad_acc_steps
 
-        if args.grad_acc_steps > 1:
-            loss = loss / args.grad_acc_steps
+            loss.backward()
 
-        loss.backward()
+            tr_loss += loss.item()
+            if (step + 1) % args.grad_acc_steps == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-        tr_loss += loss.item()
-        if (step + 1) % args.grad_acc_steps == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                optimizer.step()
+                scheduler.step()  # Update learning rate schedule
+                model.zero_grad()
+                global_step += 1
 
-            optimizer.step()
-            scheduler.step()  # Update learning rate schedule
-            model.zero_grad()
-            global_step += 1
+                # Log metrics
+                if (args.log_interval > 0 and global_step % args.log_interval == 0):
+                    # TODO: It is OK to have moved these before the evaluation right?
+                    logstr = f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
 
-            # Log metrics
-            if (args.log_interval > 0 and global_step % args.log_interval == 0):
-                # TODO: It is OK to have moved these before the evaluation right?
-                logstr = f"lr={scheduler.get_lr()[0]}; loss={(tr_loss - logging_loss) / args.log_interval};"
+                    # Only evaluate when single GPU otherwise metrics may not average well
+                    logger.info(f"[Epoch {epoch} Global Step {global_step}] Starting evaluation...")
+                    results = evaluate(args, model, tokenizer, device, prefix=global_step)
+                    for key, value in results.items():
+                        logstr += f" eval_{key}={value};"
 
-                # Only evaluate when single GPU otherwise metrics may not average well
-                logger.info(f"[global step {global_step}] Starting evaluation...")
-                results = evaluate(args, model, tokenizer, device)
-                for key, value in results.items():
-                    logstr += f" eval_{key}={value};"
+                    logger.info(f"[Epoch {epoch} Global Step {global_step}] Metrics: {logstr}")
+                    logging_loss = tr_loss
 
-                logger.info(f"[global step {global_step}] metrics: {logstr}")
-                logging_loss = tr_loss
+                # Save model checkpoint
+                if args.checkpoint_interval > 0 and global_step % args.checkpoint_interval == 0:
+                    save_progress(model, tokenizer, args, checkpoint=global_step, optimizer=optimizer, scheduler=scheduler)
 
-            # Save model checkpoint
-            if args.checkpoint_interval > 0 and global_step % args.checkpoint_interval == 0:
-                save_progress(model, args, checkpoint=global_step, optimizer=optimizer, scheduler=scheduler)
+            if args.max_steps > 0 and global_step > args.max_steps:
+                break
+        if args.max_steps > 0 and global_step > args.max_steps:
+            break
 
-    logger.info("Training complete")
-    save_progress(model, args)
+    logger.info("Training complete: Saving model")
+    save_progress(model, tokenizer, args)
     return
 
 def evaluate(args, model, tokenizer, device, prefix=""):
@@ -203,8 +210,6 @@ def evaluate(args, model, tokenizer, device, prefix=""):
         tokenizer=tokenizer,
         pretrained_weights=args.config_name,
     )
-
-    logger.info("***** Running evaluation {} *****".format(prefix))
 
     all_results = []
     start_time = timeit.default_timer()
