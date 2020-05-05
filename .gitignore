@@ -127,4 +127,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-question_answering/src/dataset/
