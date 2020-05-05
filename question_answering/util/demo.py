@@ -2,7 +2,7 @@
 from collections import namedtuple
 
 # External Dependencies:
-from IPython.display import display, HTML
+from IPython.display import Code, display, HTML
 import ipywidgets as widgets
 
 # Dummy update object for forcing initial widget loads:
@@ -92,11 +92,15 @@ def squad_widget(data, answer_fetcher):
     askbutton = widgets.Button(description="Ask!")
     paracontent = widgets.Output()
     output = widgets.Output(layout=widgets.Layout(border="1px solid #999"))
+    # We use display(Code()) because output.append_stdout contents don't seem to clear properly:
+    # https://github.com/jupyter-widgets/ipywidgets/issues/2584
+    with output:
+        display(Code("Ready", language="text"))
 
     def update_para(change):
         """Listen and respond to paragraph selector changes"""
         context = data[docslider.value]["paragraphs"][change.new]["context"]
-        paracontent.clear_output()
+        paracontent.clear_output(wait=True)
         with paracontent:
             display(HTML(f"<p>{context}</p>"))
 
@@ -106,7 +110,7 @@ def squad_widget(data, answer_fetcher):
     def update_doc(change):
         """Listen and respond to document selector changes"""
         doc = data[change.new]
-        doctitle.clear_output()
+        doctitle.clear_output(wait=True)
         with doctitle:
             display(HTML(f'<strong>{doc["title"]}</strong>'))
         # Preserve the value of the paragraph slider where possible:
@@ -122,16 +126,20 @@ def squad_widget(data, answer_fetcher):
 
     def ask(_):
         """Handle question requests"""
-        output.clear_output()
+        output.clear_output(wait=True)
+        with output:
+            display(Code("Asking...", language="text"))
         context = data[docslider.value]["paragraphs"][paraslider.value]["context"]
 
         try:
             results_raw = answer_fetcher(context, question.value)
         except:
             # TODO: Better stack trace
-            output.append_stderr("Failed to call answer fetcher")
+            output.clear_output(wait=True)
+            output.append_stderr("Failed to call answer fetcher\n")
             return
 
+        output.clear_output(wait=True)
         if not hasattr(results_raw, "__getitem__"):
             # TODO: Proper way of displaying errors in callbacks
             output.append_stderr(
@@ -157,11 +165,12 @@ def squad_widget(data, answer_fetcher):
             )
 
         if rawres is not None:
-            output.append_stdout(f"Raw result:\n{rawres}")
+            with output:
+                display(Code(f"Raw result:\n{rawres}\n", language="text"))
         prestart = context[:ixstart]
         answer = context[ixstart:ixend]
         postend = context[ixend:]
-        paracontent.clear_output()
+        paracontent.clear_output(wait=True)
         with paracontent:
             display(HTML(
                 "".join((
