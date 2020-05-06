@@ -81,5 +81,8 @@ class AwsImdbExampleDataset(TensorDataset):
             for f in files:
                 s3.meta.client.upload_file(
                     path+f, bucket_name, bucket_prefix+'/'+f)
-
+        else:
+            train_s3 = session.upload_data(path="./data/train/", bucket=bucket_name, key_prefix=bucket_prefix)
+            test_s3 = session.upload_data(path="./data/test/", bucket=bucket_name, key_prefix=bucket_prefix)
+        
 
