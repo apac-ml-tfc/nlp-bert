@@ -1,5 +1,6 @@
 # Python Built-Ins:
 from collections import namedtuple
+import traceback
 
 # External Dependencies:
 from IPython.display import Code, display, HTML
@@ -141,10 +142,10 @@ def squad_widget(data, answer_fetcher):
 
         try:
             results_raw = answer_fetcher(context, question.value)
-        except:
-            # TODO: Better stack trace
+        except Exception as err:
             output.clear_output(wait=True)
             output.append_stderr("Failed to call answer fetcher\n")
+            output.append_stderr(traceback.format_exc())
             return
 
         output.clear_output(wait=True)
