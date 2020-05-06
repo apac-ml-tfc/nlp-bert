@@ -1,5 +1,6 @@
 # Python Built-Ins:
 from collections import namedtuple
+import traceback
 
 # External Dependencies:
 from IPython.display import Code, display, HTML
@@ -15,6 +16,14 @@ DummyUpdate = namedtuple("DummyUpdate", ["new"])
 # TODO: Accept multiple answers and highlight most confident differently
 
 # TODO: If QAs are in the dataset, pre-populate the textbox with one and also hilite the ground truth answer
+
+def is_sequence(arg):
+    """Sufficiently list-like and not a string or an object"""
+    return (
+        (hasattr(arg, "__getitem__") or hasattr(arg, "__iter__"))
+        and not
+        (hasattr(arg, "strip") or hasattr(arg, "keys"))
+    )
 
 def dummy_answer_fetcher(context, question):
     """A dummy answer fetcher function used to illustrate the interface
@@ -70,7 +79,7 @@ def squad_widget(data, answer_fetcher):
         An interactive widget to be rendered in Jupyter/JupyterLab
     """
     # Allow passing either an entire SQuAD JSON or a list of SQuAD examples:
-    if data.get("data") is not None:
+    if not is_sequence(data) and data.get("data") is not None:
         data = data["data"]
 
     assert len(data), "List of documents `data` cannot be empty!"
@@ -133,20 +142,20 @@ def squad_widget(data, answer_fetcher):
 
         try:
             results_raw = answer_fetcher(context, question.value)
-        except:
-            # TODO: Better stack trace
+        except Exception as err:
             output.clear_output(wait=True)
             output.append_stderr("Failed to call answer fetcher\n")
+            output.append_stderr(traceback.format_exc())
             return
 
         output.clear_output(wait=True)
-        if not hasattr(results_raw, "__getitem__"):
+        if not is_sequence(results_raw):
             # TODO: Proper way of displaying errors in callbacks
             output.append_stderr(
                 "ValueError: answer_fetcher fn must return a tuple startix, endix; and optionally also a "
                 f"raw response. Got {results_raw}\n"
             )
-        if hasattr(results_raw[0], "__getitem__"):
+        if is_sequence(results_raw[0]):
             # First result is a (startix, endix) tuple, second result is the raw output
             ixstart, ixend = results_raw[0]
             rawres = results_raw[1] if len(results_raw) > 1 else None
