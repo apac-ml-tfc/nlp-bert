@@ -10,12 +10,12 @@ Parameters:
   ArtifactLocation:
     Description: model.tar.gz location in S3
     Type: String
-    Default: s3://2020-05-gym-bert/bert-calssification-distributed-2020-05-05-15-58-03-622/output/output.tar.gz
+    Default: s3://2020-05-gym-bert/jobs/bert-qna-short-2020-05-05-10-58-28-106/output/model.tar.gz
 Conditions:
   IADRegion: !Equals [!Ref "AWS::Region", us-east-1]
 Globals:
   Function:
-    Timeout: 180
+    Timeout: 240
   Api:
     EndpointConfiguration: REGIONAL
     # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-corsconfiguration.html
@@ -57,9 +57,9 @@ Resources:
       Description: Execute the model
       Handler: main.handler
       MemorySize: 512
-      Runtime: python3.8
+      Runtime: python3.6
       Role: !GetAtt LambdaAdminRole.Arn
-      Timeout: 120
+      Timeout: 240
       Environment:
         Variables:
           MODEL_ARTIFACT: !Ref ArtifactLocation
