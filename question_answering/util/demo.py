@@ -16,6 +16,14 @@ DummyUpdate = namedtuple("DummyUpdate", ["new"])
 
 # TODO: If QAs are in the dataset, pre-populate the textbox with one and also hilite the ground truth answer
 
+def is_sequence(arg):
+    """Sufficiently list-like and not a string or an object"""
+    return (
+        (hasattr(arg, "__getitem__") or hasattr(arg, "__iter__"))
+        and not
+        (hasattr(arg, "strip") or hasattr(arg, "keys"))
+    )
+
 def dummy_answer_fetcher(context, question):
     """A dummy answer fetcher function used to illustrate the interface
 
@@ -70,7 +78,7 @@ def squad_widget(data, answer_fetcher):
         An interactive widget to be rendered in Jupyter/JupyterLab
     """
     # Allow passing either an entire SQuAD JSON or a list of SQuAD examples:
-    if data.get("data") is not None:
+    if not is_sequence(data) and data.get("data") is not None:
         data = data["data"]
 
     assert len(data), "List of documents `data` cannot be empty!"
@@ -140,13 +148,13 @@ def squad_widget(data, answer_fetcher):
             return
 
         output.clear_output(wait=True)
-        if not hasattr(results_raw, "__getitem__"):
+        if not is_sequence(results_raw):
             # TODO: Proper way of displaying errors in callbacks
             output.append_stderr(
                 "ValueError: answer_fetcher fn must return a tuple startix, endix; and optionally also a "
                 f"raw response. Got {results_raw}\n"
             )
-        if hasattr(results_raw[0], "__getitem__"):
+        if is_sequence(results_raw[0]):
             # First result is a (startix, endix) tuple, second result is the raw output
             ixstart, ixend = results_raw[0]
             rawres = results_raw[1] if len(results_raw) > 1 else None
