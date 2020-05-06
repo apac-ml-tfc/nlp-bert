@@ -57,16 +57,16 @@ def set_seed(args):
         if args.num_gpus > 0:
             torch.cuda.manual_seed_all(args.seed)
 
-def save(model, tokenizer, model_dir):
-    print("Saving model to %s" % output_dir)
+def save(args, model, tokenizer, model_dir):
+    print("Saving model to %s" % model_dir)
 
     # Save a trained model, configuration and tokenizer using `save_pretrained()`.
     # They can then be reloaded using `from_pretrained()`
     model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-    model_to_save.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    model_to_save.save_pretrained(model_dir)
+    tokenizer.save_pretrained(model_dir)
     # Good practice: save your training arguments together with the trained model
-    # torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+    torch.save(args, os.path.join(model_dir, 'training_args.bin'))
 
 
 
@@ -501,4 +501,4 @@ if __name__ =='__main__':
     
     # Start training:
     model, tokenizer = train(args)
-    save(model, tokenizer, args.model_dir)
+    save(args, model, tokenizer, args.model_dir)
