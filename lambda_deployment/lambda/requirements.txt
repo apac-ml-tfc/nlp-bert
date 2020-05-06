@@ -1,0 +1,2 @@
+torch==1.4
+# transformers>=2.8,<2.9

@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Parameters:
+  ProjectName:
+    Description: Used as a prefix for project resources.  Can be up to 12 characters, lowercase letters (a-z) only.
+    Type: String
+    Default: allstore
+    AllowedPattern: "^[a-z]{1,12}"
+    ConstraintDescription: The ProjectName can be up to 12 characters, lowercase letters (a-z) only.
+  ArtifactLocation:
+    Description: model.tar.gz location in S3
+    Type: String
+    Default: s3://2020-05-gym-bert/bert-calssification-distributed-2020-05-05-15-58-03-622/output/output.tar.gz
+Conditions:
+  IADRegion: !Equals [!Ref "AWS::Region", us-east-1]
+Globals:
+  Function:
+    Timeout: 180
+  Api:
+    EndpointConfiguration: REGIONAL
+    # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-api-corsconfiguration.html
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+    # Domain:
+    #   DomainName: www.my-domain.com
+    #   CertificateArn: my-valid-cert-arn
+    #   EndpointConfiguration: EDGE
+
+Resources:
+
+### Execution Role for the Lambda
+  LambdaAdminRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ProjectName}-LambdaAdminRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+### Lambda API function
+  # (When API implicitly defined in SAM, the logical name of AWS::ApiGateway::RestApi is ServerlessRestApi)
+  PredictFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      FunctionName: !Sub '${ProjectName}-Predict'
+      Description: Execute the model
+      Handler: main.handler
+      MemorySize: 512
+      Runtime: python3.8
+      Role: !GetAtt LambdaAdminRole.Arn
+      Timeout: 120
+      Environment:
+        Variables:
+          MODEL_ARTIFACT: !Ref ArtifactLocation
+      CodeUri: ./lambda/
+      Events:
+        APIgateway:
+          Type: Api
+          Properties:
+            Path: /invoke
+            Method: get
+
+Outputs:
+  APIEndpoint:
+    Description: "API production endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
