@@ -5,10 +5,19 @@ import numpy as np
 import pandas as pd
 import csv
 
-# class AwsDataset(TensorDataset):
 
-#     def __init__(self):
-#         return
+# class TensorDataset(Dataset):
+#     r"""Dataset wrapping tensors.
+
+#     Each sample will be retrieved by indexing tensors along the first dimension.
+
+#     Arguments:
+#         *tensors (Tensor): tensors that have the same size of the first dimension.
+#     """
+
+#     def __init__(self, *tensors):
+#         assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
+#         self.tensors = tensors
 
 #     def __getitem__(self, index):
 #         return tuple(tensor[index] for tensor in self.tensors)
@@ -81,8 +90,14 @@ class AwsImdbExampleDataset(TensorDataset):
             for f in files:
                 s3.meta.client.upload_file(
                     path+f, bucket_name, bucket_prefix+'/'+f)
+            train_s3 = 's3://{}/{}'.format(bucket_name, bucket_prefix)
+            test_s3 = 's3://{}/{}'.format(bucket_name, bucket_prefix)
         else:
             train_s3 = session.upload_data(path="./data/train/", bucket=bucket_name, key_prefix=bucket_prefix)
             test_s3 = session.upload_data(path="./data/test/", bucket=bucket_name, key_prefix=bucket_prefix)
+            print(train_s3)
+        return (train_s3, test_s3)
+        
+        
         
 
