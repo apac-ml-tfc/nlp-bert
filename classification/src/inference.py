@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import os
-from sagemaker_inference import content_types, decoder, default_inference_handler, encoder
 import subprocess
 import sys
 
@@ -21,11 +20,9 @@ def model_fn(model_dir):
     logger.info('***** MODEL_FN ********')
     logger.info("******* Model dir contains: ")
     logger.info("Files: %s", os.listdir(model_dir))
-    logger.info("Files: %s", os.listdir(os.path.join(model_dir,'code/')))
-    logger.info("Files: %s", os.listdir(os.path.join(model_dir,'bert_models/distilbert/')))
     
-    tokenizer = AutoTokenizer.from_pretrained(os.path.join(model_dir,'bert_models/distilbert/'))
-    model = AutoModelForSequenceClassification.from_pretrained(os.path.join(model_dir,'bert_models/distilbert/'))
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
     #config = AutoConfig.from_pretrained(os.path.join(model_dir,'bert_models/distilbert/'))
 
     return model, tokenizer

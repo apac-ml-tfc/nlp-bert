@@ -15,6 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import config_args
 import data
+from inference import *
 
 
 from tqdm import tqdm, trange
@@ -269,11 +270,12 @@ def evaluate(args, model, tokenizer, prefix=""):
                 out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
+        
         if args.output_mode == "classification":
             preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
-        #result = compute_metrics(eval_task, preds, out_label_ids)
+        #result! = compute_metrics(eval_task, preds, out_label_ids)
         result = compute_metrics("sst-2", preds, out_label_ids)
         results.update(result)
 
@@ -375,15 +377,18 @@ def main():
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-        model_to_save.save_pretrained(args.output_data_dir)
-        tokenizer.save_pretrained(args.output_data_dir)
+        #model_to_save.save_pretrained(args.output_data_dir)
+        #tokenizer.save_pretrained(args.output_data_dir)
+        model_to_save.save_pretrained(args.model_dir)
+        tokenizer.save_pretrained(args.model_dir)
 
         # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_data_dir, 'training_args.bin'))
+        #torch.save(args, os.path.join(args.output_data_dir, 'training_args.bin'))
+        torch.save(args, os.path.join(args.model_dir, 'training_args.bin'))
 
         # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_data_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_data_dir)
+        model = model_class.from_pretrained(args.model_dir)
+        tokenizer = tokenizer_class.from_pretrained(args.model_dir)
         model.to(args.device)
         
     # Evaluation
@@ -392,7 +397,8 @@ def main():
     do_lower_case=True
     results = {}
     if eval_flag and args.local_rank in [-1, 0]:
-        tokenizer = tokenizer_class.from_pretrained(args.output_data_dir, do_lower_case=do_lower_case)
+        tokenizer = tokenizer_class.from_pretrained(args.model_dir, do_lower_case=do_lower_case)
+        logger.info("******Output dir folders: %s", os.listdir(args.output_data_dir))
         checkpoints = [args.output_data_dir]
         if eval_all_checkpoints:
             checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_data_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
