@@ -7,16 +7,26 @@ except ImportError as err:
     print("ImportError extracting compressed dependencies", err)
 
 # Python Built-Ins:
+import io
 import json
 import logging
 import os
 import sys
 import traceback
+import tarfile
 
 # External Dependencies:
 import boto3
+print("Importing numpy")
+import numpy as np
+#print("Importing tqdm")
+#import tqdm
+print("Importing torch")
 import torch
-#import transformers as txf
+print("Importing tokenizers")
+import tokenizers
+print("Importing transformers")
+import transformers as txf
 
 logger = logging.getLogger()
 model_cache = {}
@@ -33,9 +43,21 @@ def get_model(s3uri):
     s3 = botosess.resource("s3")
     bucket, _, key = s3uri[len("s3://"):].partition("/")
     obj = s3.Object(bucket, key)
-    
-    zipdata = s3.Object(bucket, key).get()["Body"].read()
-    return zipdata
+
+    raw = io.BytesIO(s3.Object(bucket, key).get()["Body"].read())
+
+#     if fname.endswith("tar.gz"):
+#         tar = tarfile.open(fname, "r:gz")
+#         tar.extractall()
+#         tar.close()
+#     elif fname.endswith("tar"):
+#         tar = tarfile.open(fname, "r:")
+#         tar.extractall()
+#         tar.close()
+
+    # This fails - it's a tar not a zip:
+    #modelzip = zipfile.ZipFile(raw)
+    return raw
 
 print("Defining handler")
 def handler(event, context):
@@ -57,9 +79,7 @@ def handler(event, context):
             }
     else:
         print("Using cached model")
-    
-    response = {}
-    #response["model"] = model_s3uri
+
     response = { "message": "Howdy!" }
     print("Returning result")
     return {

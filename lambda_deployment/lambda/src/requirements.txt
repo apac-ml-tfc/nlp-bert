@@ -1,0 +1,5 @@
+# DON'T ADD DEPENDENCIES HERE!
+
+# While it might be possible to combine SAM-installed dependencies (this file) with those imported manually
+# from our conda environment, you risk accidentally duplicating libraries or introducing incompatible sets of
+# versions.

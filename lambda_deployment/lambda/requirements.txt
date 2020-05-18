@@ -1,7 +1,0 @@
-# Not installing numpy leads to failed import:
-numpy
-
-# torch is installed manually (zipped) instead to save space
-
-# transformers will require same treatment as it's too large:
-# transformers>=2.8,<2.9

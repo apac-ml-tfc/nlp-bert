@@ -56,14 +56,14 @@ Resources:
       FunctionName: !Sub '${ProjectName}-Predict'
       Description: Execute the model
       Handler: main.handler
-      MemorySize: 512
+      MemorySize: 1024
       Runtime: python3.6
       Role: !GetAtt LambdaAdminRole.Arn
       Timeout: 240
       Environment:
         Variables:
           MODEL_ARTIFACT: !Ref ArtifactLocation
-      CodeUri: ./lambda/
+      CodeUri: ./lambda/build/
       Events:
         APIgateway:
           Type: Api
