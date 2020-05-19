@@ -6,6 +6,7 @@ appended to PATH and PYTHONPATH.
 """
 
 # Python Built-Ins:
+import datetime
 import os
 import shutil
 import sys
@@ -18,11 +19,15 @@ import zipfile
 # subfolder:
 PACKAGE_ZIP = "packages-tmpdir.zip"
 TMPDIR_INSTALL_TARGET = os.path.join("/tmp", PACKAGE_ZIP.rpartition(".")[0])
-if (os.path.isdir(TMPDIR_INSTALL_TARGET)):
+INSTALL_COMPLETE_LOGFILE = os.path.join(TMPDIR_INSTALL_TARGET, "tmpinstall_complete.txt")
+
+if (os.path.isfile(INSTALL_COMPLETE_LOGFILE)):
     print(f"Using existing {TMPDIR_INSTALL_TARGET} installation...")
 else:
     print(f"Installing {PACKAGE_ZIP} to /tmp...")
     zipfile.ZipFile(PACKAGE_ZIP, "r").extractall("/tmp")
+    with open(INSTALL_COMPLETE_LOGFILE, "w") as f:
+        f.write(datetime.datetime.utcnow().isoformat())
 
 sys.path.append(TMPDIR_INSTALL_TARGET)
 os.environ["PATH"] += os.pathsep + TMPDIR_INSTALL_TARGET
