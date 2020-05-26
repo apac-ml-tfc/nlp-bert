@@ -36,27 +36,54 @@ cd lambda/build/packages-local
 # Prune non-essentials:
 find . -type d -name "tests" -exec rm -rf {} +
 find . -type d -name "__pycache__" -exec rm -rf {} +
-# Temporarily disabled to try and fix import errors, but doesn't seem to help yet:
-# rm -rf ./{caffe2,wheel,wheel-*,pkg_resources,boto*,aws*,pip,pip-*,pipenv,setuptools}
-# rm -rf ./{*.egg-info,*.dist-info}
+rm -rf ./{caffe2,wheel,wheel-*,pkg_resources,boto*,aws*,pip,pip-*,pipenv,setuptools}
+rm -rf ./{*.egg-info,*.dist-info}
 find . -name \*.pyc -delete
 
+# Create the folder where we'll store our overflow dependencies:
 cd ..
-
-# Move selected (bulky) packages to the secondary store (unpacked to /tmp on init):
 mkdir -p packages-tmpdir
-# Played around with a few combinations here...
-#for pkgname in torch torch-1.4.0+cpu.dist-info numpy numpy.libs numpy-1.18.4.dist-info
-#for pkgname in torch torch-1.4.0+cpu.dist-info
-for pkg in torch torch-1.4.0+cpu.dist-info numpy numpy.libs numpy-1.18.4.dist-info tokenizers tokenizers-0.5.2.dist-info
+
+# ...But which packages to leave in packages-local, and which to zip/extract to /tmp?
+#
+# For some reason (possibly relating to difference in architecture between SM notebook and Lambda host?)
+# packages with binary lib files seem to error on import if installed in the (readonly) packages-local
+# folder... So we'll select which packages go in to the tmpdir archive by choosing all those containing
+# binary .so files.
+#
+# This is made less simple because some packages don't live in a subfolder (e.g. sentencepiece.py and
+# _sentencepiece.cpython-36m-x86_64-linux-gnu.so directly in the site-packages folder), and we'd like to
+# bring along metadata like .dist-info folders for any packages where it's present.
+#
+# The below creates a bar-separated list of base package names by:
+# - `find`ing all .so files and printing the path beginning with the package (e.g. numpy/.../foobar.so)
+# - `sed`ing to drop anything after the first /, . or - (and drop a leading newline if present)
+# - Keeping only unique package names (in alphabetical order) with `sort`
+# - Replacing newline separators with |, and then deleting the final | (since we had a trailing newline)
+BINPKGS=`find ./packages-local -name "*.so" -printf "%P\n" | sed -nr "s/_?([^\/\.]*).*/\1/p" | sort -u | tr '\n' '|'`
+BINPKGS=${BINPKGS::-1}
+
+echo "\nMoving the following binary-containing packages to tmpdir: $BINPKGS"
+
+# Now we **assume the package names don't contain any regex special characters**, and use our bar-separated
+# list as the basis for a regex to find matching folders/objects. we print only the top-level folders/objects
+# by our choice of find command input and printf result formatting.
+#
+# ...Then `sort` unique and use `awk`/`while` to iterate over the results. It's easier to construct our mv
+# expression if we work from the packages-local folder itself:
+cd packages-local
+find ./* -regextype posix-extended -iregex "\.\/_?(${BINPKGS})[\.\/\-].*" -printf "%H\n" | sort -u | awk -F '\0' '{print $0}' | while read file;
 do
-    mv packages-local/$pkg packages-tmpdir/$pkg
+    # :2 trims off the leading ./
+    mv $file ../packages-tmpdir/${file:2}
+    echo "moved ${file:2}"
 done
+cd ..
 
 # Compress the tmpdir packages to keep the Lambda deployment zip small:
 echo "Zipping packages..."
 zip -q -r9 packages-tmpdir.zip packages-tmpdir
-rm -r packages-tmpdir
+rm -rf packages-tmpdir
 # Note this zip **contains the packages-tmpdir folder in the root** because of our CWD
 
 cd ../..
@@ -66,7 +93,7 @@ cp -R lambda/src/. lambda/build/
 
 # Now our lambda/build folder should contain:
 # - The contents of lambda/src
-# - a compressed packages-tmpdir.zip containing a packages-tmpdir folder of bulky dependencies
+# - a compressed packages-tmpdir.zip containing a packages-tmpdir folder of bulky/binary dependencies
 # - a packages-local folder of embedded dependencies
 
 echo "Done!"

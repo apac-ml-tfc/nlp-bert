@@ -29,6 +29,7 @@ else:
     with open(INSTALL_COMPLETE_LOGFILE, "w") as f:
         f.write(datetime.datetime.utcnow().isoformat())
 
+# Add to PYTHONPATH so packages can be imported as normal (and PATH, just in case):
 sys.path.append(TMPDIR_INSTALL_TARGET)
 os.environ["PATH"] += os.pathsep + TMPDIR_INSTALL_TARGET
 print(f"Installed at {TMPDIR_INSTALL_TARGET}:")
@@ -37,12 +38,17 @@ print(os.listdir(TMPDIR_INSTALL_TARGET))
 
 ## Step 2: Link other dependencies locally
 
-cwd = os.path.realpath(".")
-LOCAL_PACKAGE_FOLDER = os.path.join(cwd, "packages-local")
+# To make sure we don't fall into any relative import traps (see link below for some nice tips), we'll simply
+# symlink all our packages-local objects to appear in the tmp folder alongside the extracted dependencies.
+LOCAL_PACKAGE_FOLDER = os.path.join(os.path.realpath("."), "packages-local")
 print(f"Linking local packages at {LOCAL_PACKAGE_FOLDER}...")
-sys.path.append(LOCAL_PACKAGE_FOLDER)
-os.environ["PATH"] += os.pathsep + LOCAL_PACKAGE_FOLDER
-print(f"Installed at {LOCAL_PACKAGE_FOLDER}:")
-print(os.listdir(LOCAL_PACKAGE_FOLDER))
+for filename in os.listdir(LOCAL_PACKAGE_FOLDER):
+    os.symlink(
+        os.path.join(LOCAL_PACKAGE_FOLDER, filename),
+        os.path.join(TMPDIR_INSTALL_TARGET, filename),
+    )
+
+print(f"Added symlinks to local packages, now present:)
+print(os.listdir(TMPDIR_INSTALL_TARGET))
 
 print("Installs finished")

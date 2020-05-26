@@ -11,16 +11,23 @@ import io
 import json
 import logging
 import os
+import platform
 import sys
 import traceback
 import tarfile
+
+# DEBUG: Log out what architecture we're running on:
+print(f"os.uname(): {os.uname()}")
+print(f"platform.python_implementation(): {platform.python_implementation()}")
+print(f"platform.system(): {platform.system()}")
+print(f"sys.platform: {sys.platform}")
 
 # External Dependencies:
 import boto3
 print("Importing numpy")
 import numpy as np
-#print("Importing tqdm")
-#import tqdm
+print("Importing tqdm")
+import tqdm
 print("Importing torch")
 import torch
 print("Importing tokenizers")
