@@ -14,7 +14,7 @@ import transformers as txf
 
 MODEL_CONFIG_CLASSES = list(txf.MODEL_FOR_QUESTION_ANSWERING_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
-ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in MODEL_CONFIG_CLASSES), (),)
+#ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in MODEL_CONFIG_CLASSES), (),)
 
 
 def configure_logger(logger, args):
@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument(
         "--config-name", type=str,
         default=hps.get("config-name", "bert-base-uncased"),
-        help=f"Path to pre-trained model or shortcut name selected in the list: {', '.join(ALL_MODELS)}"
+        #help=f"Path to pre-trained model or shortcut name selected in the list: {', '.join(ALL_MODELS)}"
     )
     parser.add_argument(
         "--model-type", type=str, default=hps.get("model-type", "bert"),
@@ -186,7 +186,9 @@ def parse_args():
     if args.uncased_model is None:
         if "uncased" in args.config_name:
             logger.warning(f"Assuming uncased model from name '{args.config_name}'")
+            args.uncased_model = True
         elif "cased" in args.config_name:
+            args.uncased_model = False
             logger.warning(f"Assuming cased model from name '{args.config_name}'")
         else:
             parser.error(
