@@ -67,6 +67,7 @@ def train(args):
     config = txf.AutoConfig.from_pretrained(args.config_name)
     tokenizer = txf.AutoTokenizer.from_pretrained(
         args.config_name,
+        use_fast=False,
         do_lower_case=args.uncased_model,
     )
     model = txf.AutoModelForQuestionAnswering.from_pretrained(
@@ -252,7 +253,7 @@ def evaluate(args, model, tokenizer, device, prefix=""):
             eval_feature = features[feature_index.item()]
             unique_id = int(eval_feature.unique_id)
 
-            output = [to_list(output[i]) for output in outputs]
+            output = [to_list(output[i]) for output in outputs.to_tuple()]
 
             # Some models (XLNet, XLM) use 5 arguments for their predictions, while the other "simpler"
             # models only use two.

@@ -23,7 +23,7 @@ def output_fn(prediction_output, accept):
 
 
 def model_fn(model_dir):
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
     model = AutoModelForQuestionAnswering.from_pretrained(model_dir)
     config = AutoConfig.from_pretrained(model_dir)
     return model, tokenizer, config
