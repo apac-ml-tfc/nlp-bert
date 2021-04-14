@@ -34,3 +34,4 @@ def predict_fn(input_data, model):
     nlp = pipeline(task="question-answering", model=trained_model, config=config, tokenizer=tokenizer, framework="pt")
     result = nlp(input_data)
     return result
+    
