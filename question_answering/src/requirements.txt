@@ -1,1 +1,5 @@
-transformers
+# sentencepiece is needed only for some model variants that use it (not plain BERT)
+sentencepiece
+
+# Tested on transformers 4.5.1
+transformers>=4,<5
