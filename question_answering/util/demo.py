@@ -64,7 +64,7 @@ def dummy_answer_fetcher(context, question):
 
 def squad_widget(data, answer_fetcher):
     """Generate an interactive widget to query SQuAD `data` with `answer_fetcher`
-    
+
     Parameters
     ----------
     data : Union[object, List[object]]
@@ -201,6 +201,121 @@ def squad_widget(data, answer_fetcher):
         ),
         widgets.HBox([docslider, doctitle]),
         paraslider,
+        widgets.HBox([question, askbutton]),
+        paracontent,
+        output
+    ])
+
+
+def qna_widget(answer_fetcher, default_context=""):
+    """Generate an interactive widget to query a context paragraph with `answer_fetcher`
+
+    Parameters
+    ----------
+    answer_fetcher : Callable[[str, str], Union[Tuple[int, int], Tuple[Tuple[int, int], str]]]
+        Function to find the span of the selected context that answers the submitted question; returning
+        character-wise start and end indexes, and optionally also the raw response body to display.
+    default_context : str
+        Optional 'context' (source) paragraph to pre-populate for question answering
+
+    Returns
+    -------
+    result : ipywidgets.interact
+        An interactive widget to be rendered in Jupyter/JupyterLab
+    """
+    # Set up our widgets:
+    question = widgets.Text(
+        description="Question",
+        placeholder="Type a question...",
+        layout=widgets.Layout(width="90%"),
+    )
+    askbutton = widgets.Button(description="Ask!")
+    parainput = widgets.Textarea(
+        value=default_context,
+        placeholder="Enter the paragraph containing the answer to your question",
+        description="Context:",
+        layout=widgets.Layout(width="99%"),
+    )
+    paracontent = widgets.Output()
+    output = widgets.Output(layout=widgets.Layout(border="1px solid #999"))
+    # We use display(Code()) because output.append_stdout contents don't seem to clear properly:
+    # https://github.com/jupyter-widgets/ipywidgets/issues/2584
+    with output:
+        display(Code("Ready", language="text"))
+
+    with paracontent:
+        display(HTML(f"<p>{default_context}</p>"))
+
+    def ask(_):
+        """Handle question requests"""
+        output.clear_output(wait=True)
+        with output:
+            display(Code("Asking...", language="text"))
+
+        context = parainput.value
+        with paracontent:
+            display(HTML(f"<p>{context}</p>"))
+
+        try:
+            results_raw = answer_fetcher(context, question.value)
+        except Exception as err:
+            output.clear_output(wait=True)
+            output.append_stderr("Failed to call answer fetcher\n")
+            output.append_stderr(traceback.format_exc())
+            return
+
+        output.clear_output(wait=True)
+        if not is_sequence(results_raw):
+            # TODO: Proper way of displaying errors in callbacks
+            output.append_stderr(
+                "ValueError: answer_fetcher fn must return a tuple startix, endix; and optionally also a "
+                f"raw response. Got {results_raw}\n"
+            )
+        if is_sequence(results_raw[0]):
+            # First result is a (startix, endix) tuple, second result is the raw output
+            ixstart, ixend = results_raw[0]
+            rawres = results_raw[1] if len(results_raw) > 1 else None
+        else:
+            # Just a tuple (startix, endix)... May be extended with the raw output as third element
+            ixstart = results_raw[0]
+            ixend = results_raw[1]
+            rawres = results_raw[2] if len(results_raw) > 2 else None
+
+        if ixstart < 0:
+            output.append_stderr(f"Warn: Negative ixstart {ixstart} will be overridden to 0\n")
+            ixstart = 0
+        if ixend >= len(context):
+            output.append_stderr(
+                f"Warn: ixend {ixend} greater than context length {len(context)} and will be overridden.\n"
+            )
+
+        if rawres is not None:
+            with output:
+                display(Code(f"Raw result:\n{rawres}\n", language="text"))
+        prestart = context[:ixstart]
+        answer = context[ixstart:ixend]
+        postend = context[ixend:]
+        paracontent.clear_output(wait=True)
+        with paracontent:
+            display(HTML(
+                "".join((
+                    "<p>",
+                    prestart,
+                    '<span style="background: lime;">',
+                    answer,
+                    "</span>",
+                    postend,
+                    "</p>"
+                ))
+            ))
+
+    askbutton.on_click(ask)
+
+    return widgets.VBox([
+        widgets.HTML(
+            '<p><b>🔮 Q&A Explorer: 🔍</b> Enter some source text; type a question and click Ask!</p>'
+        ),
+        parainput,
         widgets.HBox([question, askbutton]),
         paracontent,
         output
