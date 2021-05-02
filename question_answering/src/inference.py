@@ -32,20 +32,6 @@ def output_fn(prediction_output, accept):
 def model_fn(model_dir):
     print(os.listdir(model_dir))
 
-    serving_hack_filepath = os.path.join(model_dir, "model.pth")
-    if os.path.isfile(serving_hack_filepath):
-        logger.info(f"Extracting archived model (SageMaker workaround)")
-        # To work around https://github.com/pytorch/serve/pull/814 our 'model.pth' is actually a zip file, so
-        # we first need to extract it to load the other files into model_dir:
-        try:
-            with zipfile.ZipFile(os.path.join(model_dir, "model.pth"), "r") as mdlzip:
-                mdlzip.extractall(model_dir)
-        except BadZipFile as e:
-            logger.error(
-                f"Failed to load 'model.pth': which should be a zip archive containing various model files"
-            )
-            raise e
-
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
     model = AutoModelForQuestionAnswering.from_pretrained(model_dir)
     model.eval()

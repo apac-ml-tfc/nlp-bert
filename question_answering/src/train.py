@@ -5,8 +5,6 @@ import logging
 import os
 import random
 import shutil
-import tempfile
-import zipfile
 
 # External Dependencies:
 import numpy as np
@@ -37,53 +35,6 @@ def set_seed(seed, use_gpus=True):
         torch.manual_seed(seed)
         if use_gpus:
             torch.cuda.manual_seed_all(seed)
-
-
-def zip_folder_contents(folder, filename, delete_originals=True):
-    """Zip the contents of `folder` to `folder/filename`, optionally deleting the uncompressed copies
-
-    As of 2021-04, an interaction between TorchServe and SageMaker framework code in the SageMaker PyTorch
-    Framework Containers for PyTorch v1.6+ means that the training script *must* produce a top-level output
-    file called `model.pth`, and that *only* this file is visible to model_fn code at inference time... But
-    it doesn't actually have to be a valid PyTorch .pth file.
-
-    ...So we can work around by archiving all the HF Transformers artifacts we need to a simple zip file and
-    calling it 'model.pth'. Hopefully in a future version this workaround will no longer be needed!
-    """
-    outpath = os.path.join(folder, filename)
-    with tempfile.NamedTemporaryFile() as ftmp:
-        with zipfile.ZipFile(
-            ftmp,
-            "w",
-            # Default ZIP_STORED does not compress, but our overall model.tar.gz artifact will be compressed
-            # anyway so ehh
-            #compression=zipfile.ZIP_DEFLATED,
-        ) as fzip:
-            logger.info(f"Compressing files from {folder}...")
-            for cur_path, dirs, files in os.walk(folder):
-                for file in files:
-                    file_path = os.path.join(cur_path, file)
-                    fzip.write(
-                        file_path,
-                        arcname=file_path[len(folder):]
-                    )
-                    # Don't os.remove(filepath) as we go along, in case we fail and ftmp gets deleted!
-        ftmp.seek(0)
-        logger.info(f"Copying temporary zipfile to {outpath}...")
-        with open(outpath, "wb") as fout:
-            shutil.copyfileobj(ftmp, fout)
-
-    if delete_originals:
-        logger.info(f"Deleting uncompressed originals from {folder}...")
-        for cur_path, dirs, files in os.walk(folder):
-            for file in files:
-                file_path = os.path.join(cur_path, file)
-                if file == filename and cur_path == folder:
-                    logger.debug(f"Skipping: {file_path}")
-                    continue
-                logger.debug(f"Deleting: {file_path}")
-                os.remove(file_path)
-    return outpath
 
 
 def enable_sm_oneclick_deploy(model_dir):
@@ -119,17 +70,9 @@ def enable_sm_oneclick_deploy(model_dir):
     return code_path
 
 
-def save_progress(model, tokenizer, args, checkpoint=None, optimizer=None, scheduler=None, serving_hack=True):
+def save_progress(model, tokenizer, args, checkpoint=None, optimizer=None, scheduler=None):
     """Save the model and associated tokenizer"""
     logger.info("Saving current model to %s", args.model_dir)
-    serving_hack_filepath = os.path.join(args.model_dir, "model.pth")
-
-    # save_progress is called multiple times, so we don't want to keep nesting old zips in each other!
-    if serving_hack:
-        try:
-            os.remove(serving_hack_filepath)
-        except OSError:
-            pass
 
     # Save a trained model, configuration and tokenizer using `save_pretrained()`.
     # They can then be reloaded using `from_pretrained()`
@@ -140,11 +83,6 @@ def save_progress(model, tokenizer, args, checkpoint=None, optimizer=None, sched
 
     # Good practice: save your training arguments together with the trained model
     torch.save(args, os.path.join(args.model_dir, "training_args.bin"))
-
-    # Optional SageMaker TorchServe hack: zip up all your output files into a PyTorch-looking model.pth file
-    # (Otherwise the server errors out saying 'model.pth is missing' - doesn't actually have to be a .pth)
-    if serving_hack:
-        zip_folder_contents(args.model_dir, "model.pth", delete_originals=True)
 
     if checkpoint is not None:
         assert optimizer and scheduler, "Must supply optimizer and scheduler args when saving checkpoints"
