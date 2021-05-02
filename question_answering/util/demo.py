@@ -6,6 +6,9 @@ import traceback
 from IPython.display import Code, display, HTML
 import ipywidgets as widgets
 
+# RGB 0-255 color for highlighting (pick something that works with both dark and light!)
+HIGHLIGHT_COLOR = [64, 164, 64];
+
 # Dummy update object for forcing initial widget loads:
 DummyUpdate = namedtuple("DummyUpdate", ["new"])
 
@@ -24,6 +27,18 @@ def is_sequence(arg):
         and not
         (hasattr(arg, "strip") or hasattr(arg, "keys"))
     )
+
+
+def get_highlight_color(confidence=1, rgb_uint8=HIGHLIGHT_COLOR):
+    """Generate a CSS color spec for highlighting an answer with given `confidence`
+
+    `confidence` sets highlight opacity, but with a bit of a boost so that even very non-confident
+    predictions are still visible.
+    """
+    alpha_lim = 0.2
+    alpha_frac = alpha_lim + min(1., max(0., confidence)) * (1. - alpha_lim)
+    return f"rgba({rgb_uint8[0]}, {rgb_uint8[1]}, {rgb_uint8[2]}, {alpha_frac})"
+
 
 def dummy_answer_fetcher(context, question):
     """A dummy answer fetcher function used to illustrate the interface
@@ -176,6 +191,12 @@ def squad_widget(data, answer_fetcher):
         if rawres is not None:
             with output:
                 display(Code(f"Raw result:\n{rawres}\n", language="text"))
+            if isinstance(rawres, dict):
+                confidence = rawres.get("confidence", rawres.get("score"))
+            else:
+                confidence = None
+        else:
+            confidence = None
         prestart = context[:ixstart]
         answer = context[ixstart:ixend]
         postend = context[ixend:]
@@ -185,7 +206,7 @@ def squad_widget(data, answer_fetcher):
                 "".join((
                     "<p>",
                     prestart,
-                    '<span style="background: lime;">',
+                    f'<span style="background: {get_highlight_color(confidence=confidence)};">',
                     answer,
                     "</span>",
                     postend,
@@ -292,6 +313,12 @@ def qna_widget(answer_fetcher, default_context=""):
         if rawres is not None:
             with output:
                 display(Code(f"Raw result:\n{rawres}\n", language="text"))
+            if isinstance(rawres, dict):
+                confidence = rawres.get("confidence", rawres.get("score"))
+            else:
+                confidence = None
+        else:
+            confidence = None
         prestart = context[:ixstart]
         answer = context[ixstart:ixend]
         postend = context[ixend:]
@@ -301,7 +328,7 @@ def qna_widget(answer_fetcher, default_context=""):
                 "".join((
                     "<p>",
                     prestart,
-                    '<span style="background: lime;">',
+                    f'<span style="background: {get_highlight_color(confidence=confidence)};">',
                     answer,
                     "</span>",
                     postend,
